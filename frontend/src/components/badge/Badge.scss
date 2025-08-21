@@ -1,0 +1,30 @@
+.badge {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 33px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.3s;
+    width: 400px;
+    height: 50px;
+
+    &.badge-success {
+        background-color: green; /* Corrigido para uma cor apropriada */
+        color: white;
+    }
+
+    &.badge-danger {
+        background-color: red;
+        color: white;
+    }
+
+    &.badge-info {
+        background-color: blue;
+        color: white;
+    }
+
+    &.badge-warning {
+        background-color: orange;
+        color: white;
+    }
+}
