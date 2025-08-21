@@ -1,4 +1,3 @@
-<img width="513" height="124" alt="image" src="https://github.com/user-attachments/assets/396e3f44-ca2d-44c8-8688-c3a67b1e2529" /># CAA-VIRTUAL
 Projeto Integrador VI
 
 
