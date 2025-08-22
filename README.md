@@ -1,28 +1,30 @@
-# Silvia IA - Chatbot com IA Local (Ollama + Flask + React)
+c# Silvia IA - Chatbot com IA Local (Ollama + Flask + React)
 
 ## Requisitos para rodar (Windows)
 
 1. [Python 3.10+](https://www.python.org/downloads/)
 2. [Node.js LTS](https://nodejs.org/)
 3. [Docker Desktop](https://www.docker.com/products/docker-desktop)
-4. [Ollama](https://ollama.com/download)
 
-##  Configuração Inicial
+Projeto Integrador VI
 
-npm install
+Instalações: Rodar o arquivo requirements, caminho: backend/requirements
 
-### 1. Clonar o projeto
-# Rodar projeto
+Visual Studio MS: Desenvolvimento para desktop com C+:
 
-git clone <URL-do-repositório>
-cd caa-virtual
+Feramenta de compilação MSVC v142
+Depurador Just-In-Time
+Ferramentas de criação de perfil do C++
+Ferramentas do CMake do C++ para Windows
+Adaptador de Teste para google test
+IntelliCode
+AddressSanitizer do C++
+Windows 11 SDK
+gerenciador de pacotes do vcpkg
+GitHub Copilot
+Para rodar o Projeto:
 
-### Rodar o projeto
-npm run dev
-
-# abre outro terminal
-cd backend
+Entrar na pasta frontend:
+npm install e depois npm run dev
+entrar na pasta backend:
 python app.py
-
-# abre outro e rode
-ollama run phi
