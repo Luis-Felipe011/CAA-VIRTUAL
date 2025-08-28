@@ -1,0 +1,252 @@
+/* homeF.scss - Estilos escuros e elegantes para página de Funcionário */
+.homeF-container {
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, #1a2a6c, #0f0c29, #000);
+  color: #fff;
+  font-family: 'Segoe UI', sans-serif;
+  padding: 2rem;
+}
+
+body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    overflow: hidden;     // esconde scroll duplicado no container
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 2rem;
+    
+    .logo {
+      height: 40px;
+    }
+  }
+
+
+header .gradient {
+  height: 40px;
+}
+
+header .logo {
+  height: 40px;
+}
+
+.docs-section {
+  max-width: 800px;
+  margin: 0 auto;
+  
+}
+
+.docs-section h2 {
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+  color: #fff;
+}
+
+.docs-section .subtitle {
+  font-size: 1rem;
+  color: #ccc;
+  margin-bottom: 1.5rem;
+}
+
+.candidates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.candidate-card {
+  background-color: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+.candidate-card:hover {
+  transform: translateY(-2px);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  background-color: rgba(0,0,0,0.3);
+}
+
+.candidate-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.card-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Badge que já é azul forte */
+
+.chevron-icon {
+  width: 1em;
+  height: 1em;
+  color: #fff;
+  transition: transform 0.3s ease;
+}
+
+.chevron-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.card-body {
+  padding: 0.75rem 1rem;
+  background-color: rgba(0,0,0,0.2);
+}
+
+.card-body ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card-body li {
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.card-body a {
+  color: #4faaff;
+  text-decoration: none;
+}
+
+.card-body a:hover {
+  text-decoration: underline;
+}
+
+/* popup de justificativa*/
+
+// Variables (ajuste cores conforme sua paleta)
+$overlay-bg: rgba(0, 0, 0, 0.6);
+$modal-bg:    #ffffff;
+$border-radius: 8px;
+$box-shadow:  0 8px 24px rgba(0, 0, 0, 0.2);
+$primary:     #007bff;
+$danger:      #dc3545;
+$grey-light:  #f5f5f5;
+$text-color:  #333;
+
+// Fade-in do overlay
+@keyframes fadeInOverlay {
+  from { background: rgba(0, 0, 0, 0); }
+  to   { background: $overlay-bg; }
+}
+
+// Scale-in do modal
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-box {
+  background: #1f1f2e;            // dark background
+  color: #e0e0e0;                 // texto claro
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: scaleInModal 0.2s ease-out forwards;
+
+  // Header “flutuante”
+  h3 {
+    background: #2c2c3e;
+    margin: 0;
+    padding: 1rem;
+    font-size: 1.3rem;
+    text-align: center;
+    border-bottom: 1px solid #3a3a4f;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 100px;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #2c2c3e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    color: #e0e0e0;
+    resize: vertical;
+    font-family: inherit;
+
+    &:focus {
+      outline: none;
+      border-color: #4e8cff;
+    }
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+    margin-top: auto;      // empurra os botões para baixo caso o conteúdo cresça
+    padding-top: 0.5rem;   // um espacinho extra acima dos botões
+
+    button {
+      padding: 0.5rem 1.2rem;
+      font-size: 0.9rem;
+      border-radius: 6px;
+      font-weight: 500;
+      transition: background 0.2s, transform 0.1s;
+
+      &:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+      &:active:not(:disabled) {
+        transform: translateY(0);
+      }
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+
+    // Cancelar
+    button:first-of-type {
+      background: transparent;
+      border: 1px solid #555;
+      color: #ccc;
+
+      &:hover:not(:disabled) {
+        background: rgba(255,255,255,0.05);
+      }
+    }
+
+    // Confirmar
+    button:last-of-type {
+      background: #ff4d4f;
+      border: none;
+      color: #fff;
+    }
+  }
+}
+
+
+
+

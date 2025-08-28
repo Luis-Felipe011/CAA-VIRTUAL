@@ -1,0 +1,21 @@
+.em-analise-container {
+  padding: 2rem;
+  text-align: center;
+  h2 {
+    margin-bottom: 1rem;
+  }
+  .analise-loader {
+    margin: 2rem auto 0 auto;
+    border: 6px solid #eee;
+    border-top: 6px solid #007bff;
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg);}
+  100% { transform: rotate(360deg);}
+}
