@@ -75,16 +75,16 @@ def inserir_candidato(uid, nome, cpf, step):
         cur.execute("SELECT id FROM candidate WHERE id = %s", (uid,))
         existe = cur.fetchone()
         if existe:
-            # Atualiza nome e cpf
+            # Atualiza nome, cpf e step
             cur.execute(
                 "UPDATE candidate SET name = %s, cpf = %s, step = %s WHERE id = %s RETURNING id",
                 (nome, cpf, step, uid)
             )
         else:
-            # Insere novo
-           cur.execute(
-                "INSERT INTO candidate (name, cpf, step, auth_id) VALUES (%s, %s, %s, %s) RETURNING id",
-                (nome, cpf, step, uid)
+            # Insere novo usando o id do Supabase Auth
+            cur.execute(
+                "INSERT INTO candidate (id, name, cpf, step) VALUES (%s, %s, %s, %s) RETURNING id",
+                (uid, nome, cpf, step)
             )
         candidato_id = cur.fetchone()[0]
         conn.commit()
