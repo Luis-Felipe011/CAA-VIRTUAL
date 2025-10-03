@@ -29,15 +29,16 @@ export default function InfoFamily({ onStepChange, candidatoId }: Props) {
     });
   }, []);
 
-  // Função para buscar familiares
-  const buscarFamiliares = async () => {
-    if (!candidatoId) return;
-    const { data } = await supabase
-      .from("family")
-      .select("id, name, cpf")
-      .eq("candidato_id", candidatoId);
-    if (data) setFamiliares(data as Familiar[]);
-  };
+const buscarFamiliares = async () => {
+  if (!candidatoId) return;
+  const resposta = await fetch(`http://localhost:5000/api/familiares?candidato_id=${candidatoId}`, {
+    headers: {
+      "Authorization": `Bearer ${token}`,
+    },
+  });
+  const json = await resposta.json();
+  if (json.success) setFamiliares(json.familiares);
+};
 
   useEffect(() => {
     if (candidatoId) {
@@ -52,14 +53,14 @@ export default function InfoFamily({ onStepChange, candidatoId }: Props) {
     }
     setLoading(true);
     try {
-      const resposta = await fetch("http://localhost:5000/familiar", {
+      const resposta = await fetch("http://localhost:5000/api/familiar", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({
-          nome: nomeFamiliar,
+          name: nomeFamiliar,
           cpf,
           candidato_id: candidatoId,
         }),
@@ -124,13 +125,13 @@ export default function InfoFamily({ onStepChange, candidatoId }: Props) {
           onClick={async () => {
             setLoading(true);
             try {
-              const resposta = await fetch("http://localhost:5000/candidato/step", {
+              const resposta = await fetch("http://localhost:5000/api/candidato/step", {
                 method: "PATCH",
                 headers: {
                   "Content-Type": "application/json",
                   "Authorization": `Bearer ${token}`,
                 },
-                body: JSON.stringify({ step: 3 }),
+                body: JSON.stringify({ step: 3, candidato_id: candidatoId }),
               });
               const json = await resposta.json();
               if (json.success) {

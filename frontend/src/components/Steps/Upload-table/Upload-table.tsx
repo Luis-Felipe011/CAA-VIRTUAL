@@ -58,13 +58,13 @@ const UploadTable: React.FC<UploadTableProps> = ({ documents, candidatoId, onSte
 
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const resposta = await fetch("http://localhost:5000/candidato/step", {
+      const resposta = await fetch("http://localhost:5000/api/candidato/step", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ step: 4 }),
+        body: JSON.stringify({ step: 4, candidato_id: candidatoId }),
       });
       const json = await resposta.json();
       if (json.success) {

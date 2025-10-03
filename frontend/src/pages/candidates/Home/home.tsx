@@ -56,7 +56,7 @@ export function Home() {
     if (!token) return
     async function fetchChecklist() {
       try {
-        const resposta = await fetch("http://localhost:5000/checklist", {
+        const resposta = await fetch("http://localhost:5000/api/checklist", {
           method: "GET",
           headers: {
             "Content-Type": "application/json",

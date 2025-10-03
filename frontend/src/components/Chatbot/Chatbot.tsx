@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import imgSilviaIA from '/images/silviaIA.png';
 import './Chatbot.scss';
-import { sendMessage } from '../../services/Auth';
+import { supabase } from '../../supabaseClient';
 
 const Chatbot: React.FC = () => {
   const [messages, setMessages] = useState<{ user: string; bot: string }[]>([]);
@@ -30,13 +30,19 @@ const Chatbot: React.FC = () => {
     setMessages([...messages, { user: userMessage, bot: '' }]);
     setInput('');
 
+    // Obtenha o user_id do usuário autenticado
+    const { data: { user } } = await supabase.auth.getUser();
+    const user_id = user?.id;
+
     try {
-      const response = await axios.post('http://127.0.0.1:5000/api/chatbot', { message: userMessage });
-      const botMessage = response.data.response;
+      const response = await axios.post('http://127.0.0.1:5000/api/chat', {
+        message: userMessage,
+        user_id
+      });
+      const botMessage = response.data.resposta;
       setMessages((prevMessages) => {
         const newMessages = [...prevMessages];
         newMessages[newMessages.length - 1].bot = botMessage;
-        sendMessage(botMessage, userMessage);
         return newMessages;
       });
     } catch (error) {

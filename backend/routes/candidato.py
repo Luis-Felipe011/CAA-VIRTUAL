@@ -17,13 +17,13 @@ def criar_candidato():
         return jsonify({"success": False, "error": "Usuário não autenticado"}), 401
 
     data = request.get_json()
-    nome = data.get("nome")
+    name = data.get("name")
     cpf = data.get("cpf")
     step = data.get("step")
-    if not nome or not cpf:
+    if not name or not cpf:
         return jsonify({"success": False, "error": "Campos obrigatórios faltando"}), 400
 
-    candidato_id = inserir_candidato(usuario_id, nome, cpf, step)
+    candidato_id = inserir_candidato(usuario_id, name, cpf, step)
     if candidato_id:
         return jsonify({"success": True, "id": candidato_id})
     else:
@@ -38,11 +38,11 @@ def criar_familiar():
         return jsonify({"success": False, "error": "Usuário não autenticado"}), 401
 
     data = request.get_json()
-    nome = data.get("nome")
+    name = data.get("name")
     cpf = data.get("cpf")
     candidato_id = data.get("candidato_id")
 
-    if not nome or not cpf or not candidato_id:
+    if not name or not cpf or not candidato_id:
         return jsonify({"success": False, "error": "Campos obrigatórios faltando"}), 400
 
     try:
@@ -50,7 +50,7 @@ def criar_familiar():
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO family (name, cpf, candidato_id) VALUES (%s, %s, %s) RETURNING id",
-            (nome, cpf, candidato_id)
+            (name, cpf, candidato_id)
         )
         familiar_id = cur.fetchone()[0]
         conn.commit()
@@ -123,4 +123,27 @@ def atualizar_step():
         return jsonify({"success": True, "id": candidato_id_returned})
     except Exception as e:
         print(f"Erro ao atualizar step: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    
+@candidato_bp.route("/familiares", methods=["GET"])
+def listar_familiares():
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "")
+    usuario_id = get_uid_from_token(token)
+    if not usuario_id:
+        return jsonify({"success": False, "error": "Usuário não autenticado"}), 401
+
+    candidato_id = request.args.get("candidato_id")
+    if not candidato_id:
+        return jsonify({"success": False, "error": "candidato_id obrigatório"}), 400
+
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, cpf FROM family WHERE candidato_id = %s", (candidato_id,))
+        familiares = [{"id": row[0], "name": row[1], "cpf": row[2]} for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "familiares": familiares})
+    except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

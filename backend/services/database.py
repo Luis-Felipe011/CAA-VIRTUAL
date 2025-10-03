@@ -1,21 +1,19 @@
 import psycopg2
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import os
+from pathlib import Path
 
-# Carrega variáveis do .env
-load_dotenv()
+# Carrega .env da raiz e o do backend (mesma lógica do app.py)
+load_dotenv(find_dotenv())
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
-# Lê variáveis de ambiente
 USER = os.getenv("PGUSER")
-PASSWORD = os.getenv("PGPASSWORD")
+PASSWORD = os.getenv("PGPASSWORD") or os.getenv("DB_PASSWORD")  # <- aceita os dois
 HOST = os.getenv("PGHOST")
 PORT = os.getenv("PGPORT")
 DBNAME = os.getenv("PGDATABASE")
 
 def get_connection():
-    """
-    Retorna uma conexão com o banco de dados PostgreSQL.
-    """
     try:
         conn = psycopg2.connect(
             user=USER,

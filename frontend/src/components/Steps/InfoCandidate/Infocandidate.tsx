@@ -32,13 +32,13 @@ export default function InfoCandidate({ onStepChange, setCandidatoId }: Props) {
     }
     setLoading(true)
     try {
-      const resposta = await fetch("http://localhost:5000/candidato", {
+      const resposta = await fetch("http://localhost:5000/api/candidato", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ nome: nomeCandidato, cpf, step: 2 })
+        body: JSON.stringify({ name: nomeCandidato, cpf, step: 2 })
       })
 
       const json = await resposta.json()
