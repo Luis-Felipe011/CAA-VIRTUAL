@@ -1,6 +1,5 @@
 from flask import Blueprint, request, jsonify
 from repositories.usuarios import inserir_candidato
-from services.get_token import get_uid_from_token
 from services.database import get_connection
 
 documento_bp = Blueprint("documento", __name__)

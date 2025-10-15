@@ -8,6 +8,7 @@ const Chatbot: React.FC = () => {
   const [messages, setMessages] = useState<{ user: string; bot: string }[]>([]);
   const [input, setInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -27,17 +28,20 @@ const Chatbot: React.FC = () => {
     if (input.trim() === '') return;
 
     const userMessage = input;
-    setMessages([...messages, { user: userMessage, bot: '' }]);
+    setMessages([...messages, { user: userMessage, bot: 'Processando...' }]);
     setInput('');
+    setIsLoading(true);
 
     // Obtenha o user_id do usuário autenticado
     const { data: { user } } = await supabase.auth.getUser();
     const user_id = user?.id;
 
     try {
-      const response = await axios.post('http://127.0.0.1:5000/api/chat', {
+  const response = await axios.post('http://127.0.0.1:5001/api/chatbot', {
         message: userMessage,
         user_id
+      }, {
+        timeout: 10000 // 10 segundos timeout
       });
       const botMessage = response.data.resposta;
       setMessages((prevMessages) => {
@@ -45,13 +49,25 @@ const Chatbot: React.FC = () => {
         newMessages[newMessages.length - 1].bot = botMessage;
         return newMessages;
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Erro ao enviar mensagem:', error);
+      
+      let errorDetails = '';
+      if (error?.response?.data) {
+        errorDetails = JSON.stringify(error.response.data);
+      } else if (error?.message) {
+        errorDetails = error.message;
+      } else {
+        errorDetails = String(error);
+      }
+      
       setMessages((prevMessages) => {
         const newMessages = [...prevMessages];
-        newMessages[newMessages.length - 1].bot = "Desculpe, houve um erro ao enviar sua mensagem.";
+        newMessages[newMessages.length - 1].bot = `Erro: ${errorDetails}`;
         return newMessages;
       });
-      console.error('Erro ao enviar mensagem:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
