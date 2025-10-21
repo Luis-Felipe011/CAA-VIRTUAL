@@ -1,0 +1,156 @@
+.document-processor {
+  padding: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+
+  h3 {
+    color: #333;
+    margin-bottom: 0.5rem;
+  }
+
+  p {
+    color: #666;
+    margin-bottom: 2rem;
+  }
+
+  .document-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .document-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    .document-info {
+      margin-bottom: 1rem;
+
+      .document-title {
+        .doc-name {
+          font-weight: 600;
+          font-size: 1.1rem;
+          color: #333;
+        }
+      }
+
+      .document-category {
+        color: #666;
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+      }
+    }
+
+    .document-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+
+      .badge-wrapper {
+        flex-shrink: 0;
+      }
+
+      .custom-file-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        border: 2px dashed #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        flex: 1;
+        min-width: 200px;
+
+        &:hover {
+          border-color: #007bff;
+          background-color: #f8f9fa;
+        }
+
+        .file-icon {
+          font-size: 1.2rem;
+        }
+
+        .file-input {
+          display: none;
+        }
+
+        span:last-child {
+          color: #666;
+          font-size: 0.9rem;
+        }
+      }
+    }
+
+    .document-result {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 4px;
+      border-left: 4px solid #28a745;
+
+      h4 {
+        margin: 0 0 0.5rem 0;
+        color: #333;
+        font-size: 0.9rem;
+      }
+
+      pre {
+        background: #fff;
+        padding: 0.75rem;
+        border-radius: 4px;
+        border: 1px solid #e0e0e0;
+        font-size: 0.8rem;
+        overflow-x: auto;
+        margin: 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  }
+
+  .action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
+  // Responsive
+  @media (max-width: 768px) {
+    padding: 1rem;
+
+    .document-card {
+      padding: 1rem;
+
+      .document-actions {
+        flex-direction: column;
+        align-items: stretch;
+
+        .custom-file-label {
+          min-width: auto;
+        }
+      }
+    }
+
+    .action-buttons {
+      flex-direction: column;
+    }
+  }
+}
+
+// Estados de loading
+.document-processor .document-card .document-actions .custom-file-label:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+  
+  &:hover {
+    border-color: #ddd;
+    background-color: transparent;
+  }
+}

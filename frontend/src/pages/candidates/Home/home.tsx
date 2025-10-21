@@ -9,6 +9,7 @@ import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import UploadTable from '../../../components/Steps/Upload-table/Upload-table'
+import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
 import EmAnalise from '../../../components/Steps/analise/analise'
 import Resultado from '../../../components/Steps/resultado/resultado'
 
@@ -93,6 +94,8 @@ export function Home() {
     } else if (etapaAtual === 3) {
       return <UploadTable onStepChange={handleStepChange} documents={documents} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 4) {
+      return <DocumentProcessor onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
+    } else if (etapaAtual === 5) {
       return <EmAnalise />
       } else{
         return <Resultado candidatoId={candidatoId ?? ''}/>

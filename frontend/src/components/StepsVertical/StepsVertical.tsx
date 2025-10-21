@@ -18,8 +18,9 @@ interface StepsVerticalProps {
       { id: 1, nome: "Adicionar dados do candidato" },
       { id: 2, nome: "Adicionar familiares" },
       { id: 3, nome: "Envio de Documentos" },
-      { id: 4, nome: "Análise" },
-      { id: 5, nome: "Resultado" },
+      { id: 4, nome: "Processamento de Documentos" },
+      { id: 5, nome: "Análise" },
+      { id: 6, nome: "Resultado" },
     ];
 
   
