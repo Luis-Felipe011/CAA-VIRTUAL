@@ -3,21 +3,19 @@ import { supabase } from '../../../supabaseClient'
 import UserMenu from '../../../components/User-menu/User-menu'
 import './home.scss'
 import logo from '../../../assets/svg/logo.svg'
-import gradientSvg from '../../../assets/svg/gradient.svg'
 import StepsVertical from '../../../components/StepsVertical/StepsVertical'
 import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
-import UploadTable from '../../../components/Steps/Upload-table/Upload-table'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
 import EmAnalise from '../../../components/Steps/analise/analise'
 import Resultado from '../../../components/Steps/resultado/resultado'
 
 export function Home() {
-  const [documents, setDocuments] = useState<any[]>([])
   const [etapaAtual, setEtapaAtual] = useState(1)
   const [candidatoId, setCandidatoId] = useState<string | null>(null)
   const [nomeUsuario, setNomeUsuario] = useState('Usuário')
+  const [documents, setDocuments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [token, setToken] = useState<string | null>(null)
 
@@ -48,6 +46,7 @@ export function Home() {
     }
     setLoading(false)
   }, [])
+
 
   useEffect(() => {
     autenticarECarregarCandidato()
@@ -81,7 +80,6 @@ export function Home() {
     fetchChecklist()
   }, [token])
 
-
   function renderEtapa() {
     if (etapaAtual === 1) {
       return <InfoCandidate
@@ -92,14 +90,12 @@ export function Home() {
     } else if (etapaAtual === 2) {
       return <InfoFamily onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 3) {
-      return <UploadTable onStepChange={handleStepChange} documents={documents} candidatoId={candidatoId ?? ''} />
+      return <DocumentProcessor />
     } else if (etapaAtual === 4) {
-      return <DocumentProcessor onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
-    } else if (etapaAtual === 5) {
       return <EmAnalise />
-      } else{
-        return <Resultado candidatoId={candidatoId ?? ''}/>
-      }
+    } else {
+      return <Resultado candidatoId={candidatoId ?? ''}/>
+    }
   }
 
   if (loading) {
@@ -107,7 +103,7 @@ export function Home() {
   }
 
   return (
-    <div className="container">
+    <div className="container" style={{ height: '100vh', overflowY: 'auto' }}>
       <header>
         <img src={logo} alt="Logo" className="logo" />
         <UserMenu
@@ -118,7 +114,7 @@ export function Home() {
         />
       </header>
 
-      <div className="content">
+  <div className="content" style={{ marginLeft: 0 }}>
         <div style={{ padding: '2rem' }}>
           <StepsVertical etapaAtual={etapaAtual} />
         </div>
