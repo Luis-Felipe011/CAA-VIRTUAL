@@ -1,0 +1,10 @@
+transformers
+torch
+Pillow
+opencv-python
+pandas
+numpy
+PyMuPDF
+psycopg2-binary
+easyocr
+unidecode

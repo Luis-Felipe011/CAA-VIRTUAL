@@ -37,13 +37,15 @@ const Chatbot: React.FC = () => {
     const user_id = user?.id;
 
     try {
-  const response = await axios.post('http://127.0.0.1:5001/api/chatbot', {
-        message: userMessage,
-        user_id
-      }, {
-        timeout: 10000 // 10 segundos timeout
+  const response = await fetch('http://127.0.0.1:5004/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ mensagem: userMessage, user_id }),
       });
-      const botMessage = response.data.resposta;
+      const result = await response.json();
+      const botMessage = result.resposta;
       setMessages((prevMessages) => {
         const newMessages = [...prevMessages];
         newMessages[newMessages.length - 1].bot = botMessage;
