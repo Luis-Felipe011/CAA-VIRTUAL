@@ -28,9 +28,23 @@
             "cnh", 
             "detran"
         ],
-        "Pessoal - CPF": [ 
-            "cadastro de pessoa fisica", 
-            "cpf"
+        "Pessoal - Certidão de Nascimento": [
+             "certidao de nascimento", 
+             "registro civil das pessoas naturais",
+             "nascimento",
+             "registro civil"
+         ],
+         "Rendimentos - Holerite": [
+            "holerite", 
+            "contracheque", 
+            "recibo de pagamento de salario", 
+            "demonstrativo de pagamento" 
+        ],
+        "Rendimentos - IRPF": ["imposto de renda", "declaracao de ajuste anual"],
+        "Rendimentos - Declaração de Renda": [
+            "declaracao de comprovante de renda",
+            "renda mensal",
+            "detalhamento da renda"
         ],
         "Comprovante - Residência": [
             "comprovante de residencia", 
@@ -38,61 +52,61 @@
             "fatura de energia", 
             "aviso de conta de energia", 
             "talão de água", 
-            "fatura agua" 
+            "fatura agua",
+            "www.vivo.com.br",
+            "conta de telefone",
+            "fatura de internet",
+            "telefônica brasil s.a.",
+            "seus números vivo",
+            "vivo"
         ],
-        "Rendimentos - Holerite": [
-            "holerite", 
-            "contracheque", 
-            "recibo de pagamento de salario", 
-            "demonstrativo de pagamento" 
-        ],
-    
-        "Pessoal - Certidão de Nascimento": [
-             "certidao de nascimento", 
-             "registro civil das pessoas naturais",
-             "nascimento" 
-         ],
-        "Rendimentos - IRPF": ["imposto de renda", "declaracao de ajuste anual"],
         "Acadêmico - Histórico Escolar": ["historico escolar", "ensino medio"],
+        "Pessoal - CPF": [ 
+            "cadastro de pessoa fisica", 
+            "cpf"
+        ],
         "Declaração": ["declaracao de", "declaro para os devidos fins"]
     },
     "extraction_profiles": {
         "Pessoal - RG/CNH": { 
-            "Nome": ["Qual o nome completo?", "Qual o nome do titular?"],
-            "RG": ["Qual o número do Registro Geral?", "Qual o número do RG?"],
-            "CPF": ["Qual o número do CPF?", "Qual o CPF?"],
-            "Data de Nascimento": ["Qual a data de nascimento?"], 
-            "Nome da Mãe": ["Qual o nome da mãe?", "Filiação:"], 
-            "Data de Expedição": ["Qual a data de expedição?", "Data de Emissão:"]
+            "Nome": ["NOME", "Qual o nome ao lado de 'NOME'?"],
+            "RG": ["REGISTRO GERAL", "Qual o número ao lado de 'REGISTRO GERAL'?"],
+            "CPF": ["CPF", "Qual o número ao lado de 'CPF'?"],
+            "Data de Nascimento": ["DATA DE NASCIMENTO", "Qual a data ao lado de 'DATA DE NASCIMENTO'?"], 
+            "Nome da Mãe": ["Qual o primeiro nome abaixo de 'FILIAÇÃO'?", "MARIA SOUZA GUIMARÃES"],
+            "Nome do Pai": ["Qual o segundo nome abaixo de 'FILIAÇÃO'?", "LUIZ OLIVEIRA GUIMARÃES FILHO"], 
+            "Data de Expedição": ["DATA DE EXPEDIÇÃO", "Qual a data ao lado de 'DATA DE EXPEDIÇÃO'?"]
         },
         "Pessoal - CPF": { 
-            "Nome": ["Qual o nome completo?"],
-            "CPF": ["Qual o número do CPF?"]
+            "Nome": ["NOME", "Qual o nome completo?"],
+            "CPF": ["CPF", "Qual o número do CPF?"]
         },
         "Comprovante - Residência": {
-            "Nome do Destinatário": ["Qual o nome do destinatário?", "Nome do cliente:", "Para:"],
-            "Endereço": ["Qual o endereço completo?", "Endereço do local:", "Local de consumo:"],
-            "CEP": ["Qual o CEP?"],
-            "Mês/Ano Referência": ["Qual o mês de referência?", "Referente a:", "Mês/Ano:"], 
-            "Data de Vencimento": ["Qual a data de vencimento?", "Vencimento:"] 
+            "Nome do Destinatário": ["Qual o nome no topo do documento?", "MANUELA SOUZA GUIMARÃES"],
+            "Endereço": ["Qual o endereço abaixo do nome MANUELA SOUZA GUIMARÃES?", "RUA JULIO BRAGA ALARCON, 99"],
+            "CEP": ["Qual o CEP do endereço da Rua Julio Braga Alarcon?", "13745-924"],
+            "Mês/Ano Referência": ["Qual o Mês Referência?", "Mês Referência", "02/2020"], 
+            "Data de Vencimento": ["VENCIMENTO", "Qual a data de vencimento?", "02/03/2020"] 
         },
         "Rendimentos - Holerite": {
             "Nome do Empregado": ["Qual o nome do funcionário ou empregado?"],
             "Empresa": ["Qual o nome da empresa ou empregador?"],
             "CPF do Empregado": ["Qual o CPF do empregado?"],
-            "Salário Base": ["Qual o valor do Salário Base?", "Salário Contratual:"], 
-            "Total de Vencimentos": ["Qual o valor Total dos Vencimentos?", "Total Proventos:"],
-            "Total de Descontos": ["Qual o valor Total dos Descontos?"],
             "Valor Líquido": ["Qual o Valor Líquido a Receber?", "Líquido:"],
-            "Mês/Ano Referência": ["Qual o mês de referência?", "Período:", "Mês/Ano:"]
+            "Mês/Ano Referência": ["Qual o mês de referência?", "Período:"]
         },
-     
+        "Rendimentos - Declaração de Renda": {
+            "Nome do Declarado": ["Declarado:", "Qual o nome ao lado de 'Declarado'?"],
+            "CPF do Declarado": ["CPF:", "Qual o CPF ao lado de 'CPF'?"],
+            "Renda Mensal": ["Renda Mensal:", "Qual o valor ao lado de 'Renda Mensal'?"],
+            "Data do Documento": ["Qual a data do documento?", "Feito em São Paulo"]
+        },
         "Pessoal - Certidão de Nascimento": {
-            "Nome Registrado": ["Qual o nome completo do registrado?"],
-            "Data de Nascimento": ["Qual a data de nascimento por extenso?"],
-            "Local de Nascimento": ["Qual a cidade e estado de nascimento?"],
-            "Nome do Pai": ["Qual o nome do pai?", "Filiação:"], 
-            "Nome da Mãe": ["Qual o nome da mãe?", "Filiação:"]
+            "Nome Registrado": ["NOME", "Qual o nome ao lado de 'NOME'?"],
+            "Data de Nascimento": ["DATA DE NASCIMENTO POR EXTENSO", "Qual a data por extenso?"],
+            "Local de Nascimento": ["LOCAL DE NASCIMENTO", "Qual o local de nascimento?"],
+            "Nome da Mãe": ["Qual o primeiro nome abaixo de 'FILIAÇÃO'?", "MARIA SOUZA GUIMARÃES"],
+            "Nome do Pai": ["Qual o segundo nome abaixo de 'FILIAÇÃO'?", "LUIZ OLIVEIRA GUIMARÃES FILHO"]
         },
         "Rendimentos - IRPF": {  },
         "Acadêmico - Histórico Escolar": {  },

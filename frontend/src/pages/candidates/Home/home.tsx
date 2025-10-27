@@ -8,7 +8,7 @@ import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
-import EmAnalise from '../../../components/Steps/analise/analise'
+import EmAnaliseReenvio from '../../../components/Steps/analise/EmAnaliseReenvio'
 import Resultado from '../../../components/Steps/resultado/resultado'
 
 export function Home() {
@@ -52,6 +52,13 @@ export function Home() {
     autenticarECarregarCandidato()
   }, [autenticarECarregarCandidato])
 
+  // Avança para etapa "Análise" ao processar documentos
+  useEffect(() => {
+    const handleDocsProcessed = () => setEtapaAtual(4);
+    window.addEventListener('documentosProcessados', handleDocsProcessed);
+    return () => window.removeEventListener('documentosProcessados', handleDocsProcessed);
+  }, []);
+
   useEffect(() => {
     if (!token) return
     async function fetchChecklist() {
@@ -90,9 +97,9 @@ export function Home() {
     } else if (etapaAtual === 2) {
       return <InfoFamily onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 3) {
-      return <DocumentProcessor />
+      return <DocumentProcessor candidatoId={candidatoId} />
     } else if (etapaAtual === 4) {
-      return <EmAnalise />
+      return <EmAnaliseReenvio candidatoId={candidatoId} />
     } else {
       return <Resultado candidatoId={candidatoId ?? ''}/>
     }

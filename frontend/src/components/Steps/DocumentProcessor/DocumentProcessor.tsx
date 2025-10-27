@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToast } from '../../../context/ToastContext';
 import Button from '../../Button/Button';
 import Badge from '../../badge/Badge';
 import './DocumentProcessor.scss';
@@ -20,7 +21,11 @@ interface DocumentFile {
   result?: any;
 }
 
-const DocumentProcessor: React.FC = () => {
+interface DocumentProcessorProps {
+  candidatoId?: string | null;
+}
+
+const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) => {
   const [documents, setDocuments] = useState<Record<DocKey, DocumentFile>>({
     rg: { file: null, uploaded: false, processing: false, processed: false },
     comprovante_renda: { file: null, uploaded: false, processing: false, processed: false },
@@ -28,43 +33,47 @@ const DocumentProcessor: React.FC = () => {
     comprovante_residencia: { file: null, uploaded: false, processing: false, processed: false }
   });
 
+  const { showToast } = useToast();
+
   const processarTodosDocumentos = async () => {
     const arquivos = (Object.values(documents) as DocumentFile[])
       .filter((doc) => doc.file)
       .map((doc) => doc.file);
 
     if (arquivos.length === 0) {
-      alert('Adicione pelo menos um documento para processar.');
+      showToast('Adicione pelo menos um documento para processar.', 'error');
       return;
     }
 
     const formData = new FormData();
+
     arquivos.forEach((file) => {
       formData.append('files', file!);
     });
+    if (candidatoId) {
+      formData.append('candidato_id', candidatoId);
+    }
 
     try {
       const response = await fetch('http://localhost:5003/processar_documentos', {
         method: 'POST',
         body: formData,
       });
-      const result = await response.json();
+      await response.json();
       setDocuments((prev) => {
         const novo = { ...prev };
         Object.keys(novo).forEach((key) => {
           if (novo[key as DocKey].file) {
             novo[key as DocKey].processed = true;
-            novo[key as DocKey].result = result;
           }
         });
         return novo;
       });
-      alert('Processamento concluído! Veja o console para detalhes.');
-      console.log(result);
-      // Avançar para a próxima etapa
-      window.dispatchEvent(new CustomEvent('proximaEtapa'));
+      showToast('Documentos enviados para análise!', 'success');
+      // Disparar evento customizado para avançar etapa
+      window.dispatchEvent(new CustomEvent('documentosProcessados'));
     } catch (err) {
-      alert('Erro ao processar documentos.');
+      showToast('Erro ao processar documentos.', 'error');
     }
   };
 
@@ -149,11 +158,7 @@ const DocumentProcessor: React.FC = () => {
                 />
               )}
             </div>
-            {doc.result && (
-              <div className="document-result">
-                <pre>{JSON.stringify(doc.result, null, 2)}</pre>
-              </div>
-            )}
+            {/* Detalhes do documento removidos para não exibir na tela */}
           </div>
         ))}
         <div style={{ textAlign: 'center', margin: '2rem 0' }}>
