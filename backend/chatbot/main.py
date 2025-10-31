@@ -1,6 +1,6 @@
 # pip install python-dotenv langchain langchain-openai langchain-community langchain-chroma chromadb openai pypdf
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from langchain_chroma.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
@@ -11,7 +11,8 @@ import os
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+# Permite CORS apenas para o frontend local
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}}, supports_credentials=True)
 CAMINHO_DB = "db"
 
 prompt_template = """
@@ -22,8 +23,12 @@ Considere apenas as informações abaixo:
 {base_conhecimento}
 """
 
-@app.route('/api/chatbot', methods=['POST'])
+@app.route('/api/chatbot', methods=['POST', 'OPTIONS'])
+@cross_origin(origins=["http://localhost:5173", "http://127.0.0.1:5173"], supports_credentials=True)
 def chatbot():
+    # Responde ao preflight OPTIONS
+    if request.method == 'OPTIONS':
+        return ('', 204)
     data = request.get_json(force=True)
     pergunta = data.get('message') or data.get('mensagem')
     if not pergunta:
@@ -45,4 +50,4 @@ def chatbot():
     return jsonify({"ok": True, "resposta": texto_resposta})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(host="0.0.0.0", port=5004, debug=True)

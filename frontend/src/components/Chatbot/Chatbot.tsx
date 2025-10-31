@@ -37,7 +37,7 @@ const Chatbot: React.FC = () => {
     const user_id = user?.id;
 
     try {
-  const response = await fetch('http://127.0.0.1:5004/chat', {
+  const response = await fetch('http://127.0.0.1:5004/api/chatbot', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

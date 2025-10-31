@@ -38,7 +38,7 @@ def init_models():
 
     logging.info(f"[Processo {os.getpid()}] Inicializando Modelos de IA (pode demorar)...")
     try:
-        processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
+        processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa", use_fast=True)
         model_ai = VisionEncoderDecoderModel.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model_ai.to(device)
@@ -379,13 +379,13 @@ def run_analysis_for_batch(batch_id):
         total_files = len(batch_data['files'])
         
         futures = []
-        with ProcessPoolExecutor(max_workers=None) as executor:
-            
+        # Limite de workers para evitar sobrecarga de RAM em máquinas com 8GB
+        with ProcessPoolExecutor(max_workers=2) as executor:
             for item in batch_data['files']:
                 futures.append(executor.submit(_processar_documento_individual, item, config))
 
-            logging.info(f"Processando {total_files} arquivos em paralelo (aguardando conclusão)...")
-            
+            logging.info(f"Processando {total_files} arquivos em paralelo (máx 2 ao mesmo tempo, aguardando conclusão)...")
+
             for future in as_completed(futures):
                 try:
                     res = future.result()

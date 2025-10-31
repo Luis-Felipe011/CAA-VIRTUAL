@@ -173,4 +173,4 @@ async def get_resultado_lote(batch_id: str = Path(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"erro": str(e)})
 
-# Para rodar: uvicorn app:app --host 0.0.0.0 --port 5002
+# Para rodar: uvicorn app:app --host 0.0.0.0 --port 5003
