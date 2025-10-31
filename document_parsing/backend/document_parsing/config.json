@@ -83,7 +83,7 @@
         "Comprovante - Residência": {
             "Nome do Destinatário": ["Qual o nome do cliente?", "Qual o nome no topo da fatura?"],
             "Endereço": ["Qual o endereço do cliente?", "Endereço do local:"],
-            "CEP": ["Qual o CEP do endereço do cliente?"],
+            "CEP": ["CEP", "Qual o CEP do endereço do cliente?"],
             "Mês/Ano Referência": ["Mês Referência", "Qual o Mês Referência?"], 
             "Data de Vencimento": ["VENCIMENTO", "Qual a data de vencimento?"] 
         },
@@ -98,7 +98,7 @@
             "Nome do Declarado": ["Declarado:", "Qual o nome ao lado de 'Declarado'?"],
             "CPF do Declarado": ["CPF:", "Qual o CPF ao lado de 'CPF'?"],
             "Renda Mensal": ["Renda Mensal:", "Qual o valor de 'Renda Mensal'?"],
-            "Data do Documento": ["Qual a data do documento?", "Feito em São Paulo"]
+            "Data do Documento": ["Qual a data de emissão do documento?", "Data:"]
         },
         "Pessoal - Certidão de Nascimento": {
             "Nome Registrado": ["NOME", "Qual o nome ao lado de 'NOME'?"],

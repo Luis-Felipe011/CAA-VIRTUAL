@@ -83,42 +83,33 @@ def ask_ai(image_path, question):
         logging.error(f"Erro ao perguntar à IA para a imagem {os.path.basename(image_path)}: {e}")
         return ""
 
-# --- AQUI ESTÁ A OTIMIZAÇÃO DO GARGALO 1 ---
 def classify_document_with_ocr(image_path, config):
     """
     Classifica o documento usando EasyOCR, mas APENAS no topo da imagem (cabeçalho).
-    Isso é muito mais rápido que ler a imagem inteira, mas mantém a precisão.
     """
     if not ocr_reader: 
         logging.error("EasyOCR (ocr_reader) não foi inicializado.")
         return "Erro OCR"
         
     try:
-        # 1. Carrega a imagem com OpenCV
         img = cv2.imread(image_path)
         if img is None:
              logging.error(f"Não foi possível ler a imagem para OCR: {image_path}")
              return "Erro Leitura Imagem"
         
-        # 2. --- OTIMIZAÇÃO: CORTA A IMAGEM ---
-        # Pega a altura total e define o corte para os 40% superiores
         height = img.shape[0]
         crop_height = int(height * 0.40) # Corta em 40% do topo
         
-        # Se o corte for muito pequeno, usa a imagem inteira (evita erros)
         if crop_height < 50: 
             header_crop = img
         else:
-            header_crop = img[0:crop_height, :] # Pega de 0 até a altura do corte
+            header_crop = img[0:crop_height, :] 
 
-        # 3. Converte APENAS O CORTE para escala de cinza
         gray_crop = cv2.cvtColor(header_crop, cv2.COLOR_BGR2GRAY)
         
-        # 4. Executa o OCR APENAS NO CORTE (MUITO MAIS RÁPIDO)
         logging.info(f"Executando OCR otimizado (no cabeçalho) de: {os.path.basename(image_path)}")
         text = ' '.join(ocr_reader.readtext(gray_crop, detail=0, paragraph=False)).lower() 
         
-        # 5. Lógica de classificação original (agora com texto do cabeçalho)
         classification_rules = config.get("classification_rules", {})
         for category, keywords in classification_rules.items():
             if any(keyword in text for keyword in keywords):
@@ -131,7 +122,6 @@ def classify_document_with_ocr(image_path, config):
     except Exception as e:
         logging.error(f"Erro durante a classificação com OCR Otimizado para '{os.path.basename(image_path)}': {e}")
         return "Erro OCR"
-# --- FIM DA OTIMIZAÇÃO ---
 
 def extract_data(image_path, category, config):
     extraction_profiles = config.get("extraction_profiles", {})
@@ -253,10 +243,12 @@ def generate_batch_summary(batch_id, batch_results, config):
     summary['alerta_consistencia'] = alerta_consistencia
     return summary
 
-def manage_db_connection(config, batch_id, batch_summary, document_results):
+
+# --- FUNÇÃO DE BD MODIFICADA ---
+def manage_db_connection(config, batch_id, batch_summary, document_results, candidato_id=None):
     """
     (Versão Completa) Conecta-se ao banco de dados e salva os resultados.
-    Comente as linhas internas ou a chamada a esta função para desativar.
+    Agora inclui o candidato_id.
     """
     try:
         conn = psycopg2.connect(**config["db_credentials"])
@@ -273,23 +265,49 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
              cur.execute("INSERT INTO lotes (lote_id, sumario) VALUES (%s, %s) RETURNING id", (batch_id, summary_json))
              lote_fk = cur.fetchone()[0]
 
-        insert_query = """
-        INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        docs_data_to_insert = []
-        for doc in document_results:
-            dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
-            categoria = doc.get("categoria", "N/A") 
-            docs_data_to_insert.append((
-                lote_fk, 
-                doc.get("arquivo", "Nome Indisponível"), 
-                doc.get("caminho", "Caminho Indisponível"), 
-                doc.get("qualidade", "Qualidade Indisponível"), 
-                categoria, 
-                dados_extraidos_json
-            ))
         
+        docs_data_to_insert = []
+        
+        # Lógica para lidar com o novo campo 'id_candidate'
+        if candidato_id:
+            # Se o ID foi fornecido (pela API), nós o inserimos.
+            insert_query = """
+            INSERT INTO documentos (id_candidate, lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            for doc in document_results:
+                dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
+                categoria = doc.get("categoria", "N/A") 
+                docs_data_to_insert.append((
+                    candidato_id, # <-- NOVO CAMPO
+                    lote_fk, 
+                    doc.get("arquivo", "Nome Indisponível"), 
+                    doc.get("caminho", "Caminho Indisponível"), 
+                    doc.get("qualidade", "Qualidade Indisponível"), 
+                    categoria, 
+                    dados_extraidos_json
+                ))
+        else:
+            # Se o ID NÃO foi fornecido (ex: rodando via test_runner.py),
+            # deixamos o BD usar o DEFAULT gen_random_uuid().
+            logging.warning(f"Nenhum candidato_id fornecido para o lote {batch_id}. Usando o DEFAULT do banco.")
+            insert_query = """
+            INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            for doc in document_results:
+                dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
+                categoria = doc.get("categoria", "N/A") 
+                docs_data_to_insert.append((
+                    lote_fk, 
+                    doc.get("arquivo", "Nome Indisponível"), 
+                    doc.get("caminho", "Caminho Indisponível"), 
+                    doc.get("qualidade", "Qualidade Indisponível"), 
+                    categoria, 
+                    dados_extraidos_json
+                ))
+        
+        # Executa a inserção em lote
         if docs_data_to_insert:
              cur.executemany(insert_query, docs_data_to_insert)
 
@@ -310,12 +328,13 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
               cur.close()
          if 'conn' in locals() and conn:
               conn.close()
+# --- FIM DA FUNÇÃO DE BD MODIFICADA ---
 
 
 def _processar_documento_individual(item, config):
     """
     Função "worker" que processa um único documento. 
-    Ela é chamada em um processo separado pelo ProcessPoolExecutor.
+    (Esta função não precisa saber o candidato_id)
     """
     init_models() 
     
@@ -353,8 +372,12 @@ def _processar_documento_individual(item, config):
     return result
 
 
-def run_analysis_for_batch(batch_id):
-    """Função principal que executa a análise completa para um único lote."""
+# --- FUNÇÃO PRINCIPAL MODIFICADA ---
+def run_analysis_for_batch(batch_id, candidato_id=None):
+    """
+    Função principal que executa a análise completa para um único lote.
+    Agora aceita um candidato_id opcional.
+    """
     
     config = load_config() 
     if not config:
@@ -404,7 +427,8 @@ def run_analysis_for_batch(batch_id):
     print(json.dumps(batch_summary, indent=4, ensure_ascii=False))
     print("---------------------------------\n")
 
-    manage_db_connection(config, batch_id, batch_summary, batch_results) 
+    # --- CONTROLO DA CONEXÃO COM BD (Passando o candidato_id) ---
+    manage_db_connection(config, batch_id, batch_summary, batch_results, candidato_id) 
     # logging.info("--- MODO DE APRESENTAÇÃO: Conexão com BD desativada ---") 
 
     output_path_base = os.path.abspath(output_folder)
