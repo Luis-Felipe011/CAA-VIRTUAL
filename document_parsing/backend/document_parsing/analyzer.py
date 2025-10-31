@@ -19,6 +19,7 @@ import re
 from datetime import datetime, timedelta
 import easyocr
 from unidecode import unidecode
+from concurrent.futures import ProcessPoolExecutor, as_completed 
 
 # Configuração básica do logging para ver as mensagens no terminal
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,15 +36,15 @@ def init_models():
     if model_ai is not None:
         return
 
-    logging.info("Inicializando os Modelos de IA (pode demorar)...")
+    logging.info(f"[Processo {os.getpid()}] Inicializando Modelos de IA (pode demorar)...")
     try:
         processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         model_ai = VisionEncoderDecoderModel.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model_ai.to(device)
-        logging.info(f"Modelo de Extração (Donut) inicializado em '{device}'.")
+        logging.info(f"[Processo {os.getpid()}] Modelo de Extração (Donut) inicializado em '{device}'.")
         ocr_reader = easyocr.Reader(['pt'], gpu=False)
-        logging.info("Modelo de Classificação (EasyOCR) inicializado.")
+        logging.info(f"[Processo {os.getpid()}] Modelo de Classificação (EasyOCR) inicializado.")
     except Exception as e:
         logging.error(f"AVISO: Não foi possível carregar um dos modelos de IA. Erro: {e}")
 
@@ -63,7 +64,6 @@ def load_config(config_path=None):
 def ask_ai(image_path, question):
     if not model_ai: return ""
     try:
-        # Garante que a imagem está em RGB (como já estava)
         image = Image.open(image_path).convert("RGB")
         pixel_values = processor(image, return_tensors="pt").pixel_values
         task_prompt = f"<s_docvqa><s_question>{question}</s_question><s_answer>"
@@ -83,36 +83,56 @@ def ask_ai(image_path, question):
         logging.error(f"Erro ao perguntar à IA para a imagem {os.path.basename(image_path)}: {e}")
         return ""
 
-# --- FUNÇÃO classify_document_with_ocr COM PRÉ-PROCESSAMENTO ---
+# --- AQUI ESTÁ A OTIMIZAÇÃO DO GARGALO 1 ---
 def classify_document_with_ocr(image_path, config):
-    if not ocr_reader: return "Outros"
+    """
+    Classifica o documento usando EasyOCR, mas APENAS no topo da imagem (cabeçalho).
+    Isso é muito mais rápido que ler a imagem inteira, mas mantém a precisão.
+    """
+    if not ocr_reader: 
+        logging.error("EasyOCR (ocr_reader) não foi inicializado.")
+        return "Erro OCR"
+        
     try:
-        # Pré-processamento: Ler e converter para escala de cinza
+        # 1. Carrega a imagem com OpenCV
         img = cv2.imread(image_path)
         if img is None:
              logging.error(f"Não foi possível ler a imagem para OCR: {image_path}")
              return "Erro Leitura Imagem"
-        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # Opcional: Aplicar um limiar (thresholding) para binarizar a imagem pode ajudar
-        # _, thresh_img = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # 2. --- OTIMIZAÇÃO: CORTA A IMAGEM ---
+        # Pega a altura total e define o corte para os 40% superiores
+        height = img.shape[0]
+        crop_height = int(height * 0.40) # Corta em 40% do topo
         
-        # Usar a imagem em escala de cinza (ou binarizada) para o OCR
-        text = ' '.join(ocr_reader.readtext(gray_img, detail=0, paragraph=False)).lower() 
+        # Se o corte for muito pequeno, usa a imagem inteira (evita erros)
+        if crop_height < 50: 
+            header_crop = img
+        else:
+            header_crop = img[0:crop_height, :] # Pega de 0 até a altura do corte
+
+        # 3. Converte APENAS O CORTE para escala de cinza
+        gray_crop = cv2.cvtColor(header_crop, cv2.COLOR_BGR2GRAY)
         
+        # 4. Executa o OCR APENAS NO CORTE (MUITO MAIS RÁPIDO)
+        logging.info(f"Executando OCR otimizado (no cabeçalho) de: {os.path.basename(image_path)}")
+        text = ' '.join(ocr_reader.readtext(gray_crop, detail=0, paragraph=False)).lower() 
+        
+        # 5. Lógica de classificação original (agora com texto do cabeçalho)
         classification_rules = config.get("classification_rules", {})
         for category, keywords in classification_rules.items():
             if any(keyword in text for keyword in keywords):
                 logging.info(f"Documento '{os.path.basename(image_path)}' classificado como: {category}")
                 return category
+                
         logging.warning(f"Documento '{os.path.basename(image_path)}' não classificado, retornando 'Outros'. Texto OCR: '{text[:100]}...'")
         return "Outros"
+        
     except Exception as e:
-        logging.error(f"Erro durante a classificação com OCR para '{os.path.basename(image_path)}': {e}")
+        logging.error(f"Erro durante a classificação com OCR Otimizado para '{os.path.basename(image_path)}': {e}")
         return "Erro OCR"
-# --- FIM DA FUNÇÃO MELHORADA ---
+# --- FIM DA OTIMIZAÇÃO ---
 
-# --- FUNÇÃO extract_data COM PERGUNTAS ALTERNATIVAS E LOGS ---
 def extract_data(image_path, category, config):
     extraction_profiles = config.get("extraction_profiles", {})
     profile = extraction_profiles.get(category)
@@ -120,24 +140,22 @@ def extract_data(image_path, category, config):
     extracted_data = {}
     logging.info(f"Iniciando extração para categoria '{category}' no ficheiro '{os.path.basename(image_path)}'...")
     for field, questions in profile.items():
-        answer = "" # Inicializa answer fora do loop interno
-        for i, question in enumerate(questions): # Itera sobre as perguntas para o mesmo campo
+        answer = "" 
+        for i, question in enumerate(questions): 
             logging.info(f"Tentando pergunta {i+1}/{len(questions)} para '{field}': '{question}'")
             answer = ask_ai(image_path, question)
-            # Verifica se a resposta é válida (não vazia, não contém 'n/a' ou similar, e tem mais que 1 caracter útil)
             if answer and isinstance(answer, str) and "n/a" not in answer.lower() and len(answer.strip()) > 1: 
-                extracted_data[field] = answer.strip() # Remove espaços extras
+                extracted_data[field] = answer.strip() 
                 logging.info(f"==> Resposta encontrada para '{field}': '{answer.strip()}'")
-                break # Para na primeira resposta válida encontrada para este campo
-        if field not in extracted_data: # Se nenhuma pergunta funcionou para este campo
+                break 
+        if field not in extracted_data: 
              logging.warning(f"### Nenhuma resposta válida encontrada para o campo '{field}' na categoria '{category}'.")
     
     if not extracted_data:
         logging.warning(f"Nenhum dado extraído para a categoria '{category}' no ficheiro '{os.path.basename(image_path)}'.")
-        return None # Retorna None se o dicionário estiver vazio
+        return None 
 
     return extracted_data
-# --- FIM DA FUNÇÃO MELHORADA ---
 
 def prepare_batch_files(batch_folder, config):
     max_pages = config["processing_settings"]["pdf_max_pages_to_process"]
@@ -146,16 +164,15 @@ def prepare_batch_files(batch_folder, config):
         all_files = os.listdir(batch_folder)
     except FileNotFoundError:
         logging.error(f"A pasta de entrada especificada não foi encontrada: {batch_folder}")
-        return batch_data # Retorna dados vazios
+        return batch_data 
 
     for filename in all_files:
         path = os.path.join(batch_folder, filename)
-        if not os.path.isfile(path): # Ignora subpastas
+        if not os.path.isfile(path): 
              continue
         
         batch_data['original_files'].add(path)
         
-        # Verifica se é um formato de imagem suportado pelo OpenCV/PIL antes de tentar converter PDF
         supported_image_formats = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')
         if path.lower().endswith(supported_image_formats):
              batch_data['files'].append(path)
@@ -167,7 +184,6 @@ def prepare_batch_files(batch_folder, config):
                 for i in range(num_pages_to_process):
                     page = doc.load_page(i)
                     pix = page.get_pixmap()
-                    # Salva como PNG para melhor qualidade do OCR em vez de JPG
                     image_path = os.path.join(batch_folder, f"{os.path.splitext(filename)[0]}_pagina_{i+1}.png") 
                     pix.save(image_path)
                     batch_data['files'].append(image_path)
@@ -196,7 +212,6 @@ def assess_quality(image_path, config):
 def generate_batch_summary(batch_id, batch_results, config):
     summary = {}
     required_docs = set(config.get("processing_settings", {}).get("required_docs_checklist", []))
-    # Usa a categoria original se disponível, senão "N/A"
     found_docs_categories = {result.get('categoria', 'N/A') for result in batch_results}
     
     missing_docs = list(required_docs - found_docs_categories)
@@ -208,24 +223,21 @@ def generate_batch_summary(batch_id, batch_results, config):
     names = set()
     for res in batch_results:
          dados = res.get("dados_extraidos")
-         if isinstance(dados, dict): # Garante que é um dicionário
+         if isinstance(dados, dict): 
              for key, val in dados.items():
-                 # Verifica se 'nome' está na chave (ignorando maiúsculas/minúsculas) e se o valor é uma string válida
                  if "nome" in key.lower() and isinstance(val, str) and val:
                      names.add(val.strip().title())
 
-    alerta_consistencia = "N/A (Nenhum nome extraído)" # Mensagem padrão
+    alerta_consistencia = "N/A (Nenhum nome extraído)" 
     if len(names) > 1:
         alerta_consistencia = f"Divergência de nomes nos documentos: {list(names)}"
     elif len(names) == 1:
         extracted_name = unidecode(list(names)[0].lower())
-        # Tenta extrair um nome do ID do lote (ex: 'lote_joao_silva_123' -> 'joao silva')
         clean_batch_id_parts = [part for part in unidecode(batch_id.lower()).replace('_', ' ').replace('-', ' ').split() if not part.isdigit() and len(part) > 1]
         clean_batch_id = " ".join(clean_batch_id_parts)
 
-        # Verificação mais flexível: verifica se ALGUMA parte significativa do nome extraído está no ID do lote
         nome_encontrado_no_lote = False
-        if clean_batch_id: # Só faz a verificação se conseguimos extrair um nome do lote
+        if clean_batch_id: 
             for part_nome in extracted_name.split():
                  if len(part_nome) > 2 and part_nome in clean_batch_id:
                      nome_encontrado_no_lote = True
@@ -233,16 +245,14 @@ def generate_batch_summary(batch_id, batch_results, config):
         
         if nome_encontrado_no_lote:
              alerta_consistencia = f"OK (Nome '{list(names)[0]}' consistente com o lote)"
-        elif clean_batch_id: # Se tínhamos um nome no lote mas não bateu
+        elif clean_batch_id: 
              alerta_consistencia = f"Alerta: Nome '{list(names)[0]}' pode não corresponder ao lote '{batch_id}'."
-        else: # Se não conseguimos extrair nome do lote
+        else: 
              alerta_consistencia = f"OK (Nome '{list(names)[0]}' extraído, sem nome de referência no lote)"
 
     summary['alerta_consistencia'] = alerta_consistencia
     return summary
 
-
-# --- FUNÇÃO manage_db_connection (Comentar para desativar) ---
 def manage_db_connection(config, batch_id, batch_summary, document_results):
     """
     (Versão Completa) Conecta-se ao banco de dados e salva os resultados.
@@ -252,14 +262,12 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
         summary_json = json.dumps(batch_summary, ensure_ascii=False)
-        # Verifica se o lote já existe antes de inserir
         cur.execute("SELECT id FROM lotes WHERE lote_id = %s", (batch_id,))
         existing_lote = cur.fetchone()
         
         if existing_lote:
              lote_fk = existing_lote[0]
              logging.warning(f"Lote '{batch_id}' já existe no banco. Atualizando documentos...")
-             # Opcional: Poderia apagar documentos antigos antes de inserir novos
              cur.execute("DELETE FROM documentos WHERE lote_fk = %s", (lote_fk,))
         else:
              cur.execute("INSERT INTO lotes (lote_id, sumario) VALUES (%s, %s) RETURNING id", (batch_id, summary_json))
@@ -272,7 +280,6 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
         docs_data_to_insert = []
         for doc in document_results:
             dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
-            # Garante que a categoria não seja None antes de inserir
             categoria = doc.get("categoria", "N/A") 
             docs_data_to_insert.append((
                 lote_fk, 
@@ -283,7 +290,6 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
                 dados_extraidos_json
             ))
         
-        # Executa a inserção em lote para mais eficiência
         if docs_data_to_insert:
              cur.executemany(insert_query, docs_data_to_insert)
 
@@ -293,7 +299,6 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
         logging.info(f"Resultados do lote '{batch_id}' salvos/atualizados no banco de dados com sucesso.")
     except psycopg2.Error as db_err:
          logging.error(f"Erro de Banco de Dados ao salvar lote '{batch_id}': {db_err}")
-         # Opcional: Tentar rollback em caso de erro
          if 'conn' in locals() and conn: 
               conn.rollback() 
     except Exception as e:
@@ -301,26 +306,62 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
         if 'conn' in locals() and conn: 
               conn.rollback()
     finally:
-         # Garante que a conexão seja fechada mesmo se ocorrer um erro
          if 'cur' in locals() and cur:
               cur.close()
          if 'conn' in locals() and conn:
               conn.close()
-# --- FIM DA FUNÇÃO manage_db_connection ---
+
+
+def _processar_documento_individual(item, config):
+    """
+    Função "worker" que processa um único documento. 
+    Ela é chamada em um processo separado pelo ProcessPoolExecutor.
+    """
+    init_models() 
+    
+    if isinstance(item, dict) and 'path' in item:
+         path = item['path']
+    elif isinstance(item, str):
+         path = item
+    else:
+         logging.error(f"Item inválido na lista de ficheiros: {item}")
+         return None 
+
+    abs_path = os.path.abspath(path)
+    logging.info(f"Processando ficheiro: {os.path.basename(abs_path)}")
+    result = {"arquivo": os.path.basename(abs_path), "caminho": abs_path} 
+
+    if isinstance(item, dict) and 'error' in item:
+        result.update({"qualidade": f"Reprovado (Erro na conversão: {item['error']})", "categoria": "N/A", "dados_extraidos": None})
+    elif not os.path.exists(abs_path):
+         result.update({"qualidade": "Reprovado (Ficheiro não encontrado após conversão)", "categoria": "N/A", "dados_extraidos": None})
+    else:
+        try:
+            result["qualidade"] = assess_quality(abs_path, config)
+            if "Aprovado" in result["qualidade"]:
+                result["categoria"] = classify_document_with_ocr(abs_path, config)
+                if "Erro" not in result["categoria"]: 
+                    result["dados_extraidos"] = extract_data(abs_path, result["categoria"], config)
+                else:
+                     result["dados_extraidos"] = None
+            else:
+                result.update({"categoria": "N/A", "dados_extraidos": None})
+        except Exception as proc_err:
+             logging.error(f"Erro inesperado ao processar '{os.path.basename(abs_path)}': {proc_err}")
+             result.update({"qualidade": "Reprovado (Erro no processamento)", "categoria": "N/A", "dados_extraidos": None})
+
+    return result
 
 
 def run_analysis_for_batch(batch_id):
     """Função principal que executa a análise completa para um único lote."""
-    init_models() # Garante que os modelos estão carregados
     
-    # Usa o caminho relativo a partir do local do analyzer.py
     config = load_config() 
     if not config:
         return {"status": "error", "message": "Configuração não encontrada"}
 
     input_folder = config["folder_paths"]["input"]
     output_folder = config["folder_paths"]["output"]
-    # Cria o caminho absoluto para a pasta do lote
     batch_folder_path = os.path.abspath(os.path.join(input_folder, batch_id))
 
     if not os.path.isdir(batch_folder_path):
@@ -329,63 +370,33 @@ def run_analysis_for_batch(batch_id):
 
     logging.info(f"Iniciando preparação de ficheiros para o lote: {batch_id}")
     batch_data = prepare_batch_files(batch_folder_path, config)
+    
     if not batch_data['files']:
         logging.warning(f"Nenhum ficheiro válido encontrado ou convertido no lote {batch_id}")
-        # Mesmo sem ficheiros válidos, podemos querer mover a pasta
-        # return {"status": "warning", "message": f"Nenhum ficheiro válido no lote {batch_id}"}
-        batch_results = [] # Continua para gerar sumário vazio e mover a pasta
+        batch_results = []
     else:
         batch_results = []
         total_files = len(batch_data['files'])
-        for i, item in enumerate(batch_data['files']):
-            # Garante que 'item' é um caminho de ficheiro ou um dicionário de erro
-            if isinstance(item, dict) and 'path' in item:
-                 path = item['path']
-            elif isinstance(item, str):
-                 path = item
-            else:
-                 logging.error(f"Item inválido na lista de ficheiros: {item}")
-                 continue
-
-            # Cria o caminho absoluto para o ficheiro
-            abs_path = os.path.abspath(path) 
+        
+        futures = []
+        with ProcessPoolExecutor(max_workers=None) as executor:
             
-            logging.info(f"Processando ficheiro {i+1}/{total_files}: {os.path.basename(abs_path)}")
-            result = {"arquivo": os.path.basename(abs_path), "caminho": abs_path} # Usa caminho absoluto
+            for item in batch_data['files']:
+                futures.append(executor.submit(_processar_documento_individual, item, config))
 
-            if isinstance(item, dict) and 'error' in item:
-                result.update({"qualidade": f"Reprovado (Erro na conversão: {item['error']})", "categoria": "N/A", "dados_extraidos": None})
-            elif not os.path.exists(abs_path):
-                 result.update({"qualidade": "Reprovado (Ficheiro não encontrado após conversão)", "categoria": "N/A", "dados_extraidos": None})
-            else:
+            logging.info(f"Processando {total_files} arquivos em paralelo (aguardando conclusão)...")
+            
+            for future in as_completed(futures):
                 try:
-                    result["qualidade"] = assess_quality(abs_path, config)
-                    if "Aprovado" in result["qualidade"]:
-                        result["categoria"] = classify_document_with_ocr(abs_path, config)
-                        # Só tenta extrair dados se a categoria não for um erro
-                        if "Erro" not in result["categoria"]: 
-                            result["dados_extraidos"] = extract_data(abs_path, result["categoria"], config)
-                        else:
-                             result["dados_extraidos"] = None
-                    else:
-                        result.update({"categoria": "N/A", "dados_extraidos": None})
-                except Exception as proc_err:
-                     logging.error(f"Erro inesperado ao processar '{os.path.basename(abs_path)}': {proc_err}")
-                     result.update({"qualidade": "Reprovado (Erro no processamento)", "categoria": "N/A", "dados_extraidos": None})
+                    res = future.result()
+                    if res:
+                        batch_results.append(res)
+                except Exception as e:
+                    logging.error(f"Uma tarefa de processamento de documento falhou: {e}")
 
-            batch_results.append(result)
-            
-            # Opcional: Apagar a imagem PNG gerada do PDF após o processamento para limpar
-            if path.lower().endswith(".png") and "_pagina_" in path.lower() and os.path.exists(abs_path):
-                 try:
-                     # os.remove(abs_path) 
-                     # logging.info(f"Ficheiro temporário removido: {os.path.basename(abs_path)}")
-                     pass # Descomente os.remove para ativar a limpeza
-                 except Exception as del_err:
-                      logging.warning(f"Não foi possível remover o ficheiro temporário '{os.path.basename(abs_path)}': {del_err}")
+        logging.info("Processamento paralelo concluído.")
 
 
-    # Geração do sumário e conexão com BD acontecem mesmo se batch_results estiver vazio (para registar o lote)
     logging.info("Gerando sumário do lote...")
     batch_summary = generate_batch_summary(batch_id, batch_results, config)
     
@@ -393,12 +404,9 @@ def run_analysis_for_batch(batch_id):
     print(json.dumps(batch_summary, indent=4, ensure_ascii=False))
     print("---------------------------------\n")
 
-    # --- CONTROLO DA CONEXÃO COM BD ---
-    # Comente a linha abaixo para DESATIVAR a gravação no banco de dados durante a apresentação
     manage_db_connection(config, batch_id, batch_summary, batch_results) 
-    # logging.info("--- MODO DE APRESENTAÇÃO: Conexão com BD desativada ---") # Descomente esta linha se comentar a de cima
+    # logging.info("--- MODO DE APRESENTAÇÃO: Conexão com BD desativada ---") 
 
-    # Cria o caminho absoluto para a pasta de saída
     output_path_base = os.path.abspath(output_folder)
     output_path_lote = os.path.join(output_path_base, batch_id)
     
@@ -407,15 +415,8 @@ def run_analysis_for_batch(batch_id):
         logging.info(f"Pasta de saída criada: {output_path_base}")
         
     try:
-        # Verifica se a pasta de destino já existe
         if os.path.exists(output_path_lote):
              logging.warning(f"A pasta de destino '{output_path_lote}' já existe. Sobrescrevendo/movendo conteúdo...")
-             # Opção 1: Apagar destino antes de mover (cuidado!)
-             # shutil.rmtree(output_path_lote) 
-             # Opção 2: Mover ficheiros individualmente (mais seguro se quiser mesclar)
-             # for item_name in os.listdir(batch_folder_path):
-             #    shutil.move(os.path.join(batch_folder_path, item_name), os.path.join(output_path_lote, item_name))
-             # Opção 3: Simplesmente mover (pode dar erro se destino não estiver vazio, dependendo do OS)
              shutil.move(batch_folder_path, output_path_lote)
         else:
             shutil.move(batch_folder_path, output_path_lote)
@@ -423,7 +424,6 @@ def run_analysis_for_batch(batch_id):
         logging.info(f"Lote '{batch_id}' movido para a pasta de processados: {output_path_lote}")
     except Exception as e:
         logging.error(f"Não foi possível mover o lote '{batch_id}' de '{batch_folder_path}' para '{output_path_lote}': {e}")
-        # Mesmo que não consiga mover, a análise foi feita. Retorna sucesso.
         return {"status": "warning", "message": f"Lote {batch_id} processado, mas falha ao mover pasta."}
 
     return {"status": "success", "message": f"Lote {batch_id} processado."}

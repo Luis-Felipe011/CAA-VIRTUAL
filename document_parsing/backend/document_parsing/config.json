@@ -1,8 +1,8 @@
 {
     "db_credentials": {
-        "dbname": "ProjetoIntegradorJunto",
+        "dbname": "PROJETOINTEGRADOR",
         "user": "postgres",
-        "password": "adminadmin",
+        "password": "leonardo",
         "host": "localhost",
         "port": "5432"
     },
@@ -73,20 +73,19 @@
             "RG": ["REGISTRO GERAL", "Qual o número ao lado de 'REGISTRO GERAL'?"],
             "CPF": ["CPF", "Qual o número ao lado de 'CPF'?"],
             "Data de Nascimento": ["DATA DE NASCIMENTO", "Qual a data ao lado de 'DATA DE NASCIMENTO'?"], 
-            "Nome da Mãe": ["Qual o primeiro nome abaixo de 'FILIAÇÃO'?", "MARIA SOUZA GUIMARÃES"],
-            "Nome do Pai": ["Qual o segundo nome abaixo de 'FILIAÇÃO'?", "LUIZ OLIVEIRA GUIMARÃES FILHO"], 
-            "Data de Expedição": ["DATA DE EXPEDIÇÃO", "Qual a data ao lado de 'DATA DE EXPEDIÇÃO'?"]
+            "Nome da Mãe": ["Qual o nome da mãe em 'FILIAÇÃO'?"],
+            "Nome do Pai": ["Qual o nome do pai em 'FILIAÇÃO'?"]
         },
         "Pessoal - CPF": { 
             "Nome": ["NOME", "Qual o nome completo?"],
             "CPF": ["CPF", "Qual o número do CPF?"]
         },
         "Comprovante - Residência": {
-            "Nome do Destinatário": ["Qual o nome no topo do documento?", "MANUELA SOUZA GUIMARÃES"],
-            "Endereço": ["Qual o endereço abaixo do nome MANUELA SOUZA GUIMARÃES?", "RUA JULIO BRAGA ALARCON, 99"],
-            "CEP": ["Qual o CEP do endereço da Rua Julio Braga Alarcon?", "13745-924"],
-            "Mês/Ano Referência": ["Qual o Mês Referência?", "Mês Referência", "02/2020"], 
-            "Data de Vencimento": ["VENCIMENTO", "Qual a data de vencimento?", "02/03/2020"] 
+            "Nome do Destinatário": ["Qual o nome do cliente?", "Qual o nome no topo da fatura?"],
+            "Endereço": ["Qual o endereço do cliente?", "Endereço do local:"],
+            "CEP": ["Qual o CEP do endereço do cliente?"],
+            "Mês/Ano Referência": ["Mês Referência", "Qual o Mês Referência?"], 
+            "Data de Vencimento": ["VENCIMENTO", "Qual a data de vencimento?"] 
         },
         "Rendimentos - Holerite": {
             "Nome do Empregado": ["Qual o nome do funcionário ou empregado?"],
@@ -98,15 +97,15 @@
         "Rendimentos - Declaração de Renda": {
             "Nome do Declarado": ["Declarado:", "Qual o nome ao lado de 'Declarado'?"],
             "CPF do Declarado": ["CPF:", "Qual o CPF ao lado de 'CPF'?"],
-            "Renda Mensal": ["Renda Mensal:", "Qual o valor ao lado de 'Renda Mensal'?"],
+            "Renda Mensal": ["Renda Mensal:", "Qual o valor de 'Renda Mensal'?"],
             "Data do Documento": ["Qual a data do documento?", "Feito em São Paulo"]
         },
         "Pessoal - Certidão de Nascimento": {
             "Nome Registrado": ["NOME", "Qual o nome ao lado de 'NOME'?"],
-            "Data de Nascimento": ["DATA DE NASCIMENTO POR EXTENSO", "Qual a data por extenso?"],
-            "Local de Nascimento": ["LOCAL DE NASCIMENTO", "Qual o local de nascimento?"],
-            "Nome da Mãe": ["Qual o primeiro nome abaixo de 'FILIAÇÃO'?", "MARIA SOUZA GUIMARÃES"],
-            "Nome do Pai": ["Qual o segundo nome abaixo de 'FILIAÇÃO'?", "LUIZ OLIVEIRA GUIMARÃES FILHO"]
+            "Data de Nascimento": ["DATA DE NASCIMENTO POR EXTENSO"],
+            "Local de Nascimento": ["LOCAL DE NASCIMENTO"],
+            "Nome da Mãe": ["Qual o nome da mãe em 'FILIAÇÃO'?"],
+            "Nome do Pai": ["Qual o nome do pai em 'FILIAÇÃO'?"]
         },
         "Rendimentos - IRPF": {  },
         "Acadêmico - Histórico Escolar": {  },
