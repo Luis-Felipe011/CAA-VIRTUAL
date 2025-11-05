@@ -19,7 +19,8 @@ import re
 from datetime import datetime, timedelta
 import easyocr
 from unidecode import unidecode
-from concurrent.futures import ProcessPoolExecutor, as_completed 
+# --- MUDANÇA AQUI: Trocado Process por Thread ---
+from concurrent.futures import ThreadPoolExecutor, as_completed 
 
 # Configuração básica do logging para ver as mensagens no terminal
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,20 +32,24 @@ processor = None
 device = None
 
 def init_models():
-    """Inicializa os modelos de IA apenas na primeira chamada."""
+    """
+    Inicializa os modelos de IA apenas na primeira chamada.
+    AGORA É CHAMADO APENAS UMA VEZ, NO PROCESSO PRINCIPAL.
+    """
     global model_ai, ocr_reader, processor, device
     if model_ai is not None:
         return
 
-    logging.info(f"[Processo {os.getpid()}] Inicializando Modelos de IA (pode demorar)...")
+    # --- MUDANÇA AQUI: Removido o f"[Processo {os.getpid()}]" para clareza ---
+    logging.info(f"Inicializando Modelos de IA (pode demorar)...")
     try:
         processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         model_ai = VisionEncoderDecoderModel.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model_ai.to(device)
-        logging.info(f"[Processo {os.getpid()}] Modelo de Extração (Donut) inicializado em '{device}'.")
+        logging.info(f"Modelo de Extração (Donut) inicializado em '{device}'.")
         ocr_reader = easyocr.Reader(['pt'], gpu=False)
-        logging.info(f"[Processo {os.getpid()}] Modelo de Classificação (EasyOCR) inicializado.")
+        logging.info(f"Modelo de Classificação (EasyOCR) inicializado.")
     except Exception as e:
         logging.error(f"AVISO: Não foi possível carregar um dos modelos de IA. Erro: {e}")
 
@@ -243,8 +248,6 @@ def generate_batch_summary(batch_id, batch_results, config):
     summary['alerta_consistencia'] = alerta_consistencia
     return summary
 
-
-# --- FUNÇÃO DE BD MODIFICADA ---
 def manage_db_connection(config, batch_id, batch_summary, document_results, candidato_id=None):
     """
     (Versão Completa) Conecta-se ao banco de dados e salva os resultados.
@@ -268,9 +271,7 @@ def manage_db_connection(config, batch_id, batch_summary, document_results, cand
         
         docs_data_to_insert = []
         
-        # Lógica para lidar com o novo campo 'id_candidate'
         if candidato_id:
-            # Se o ID foi fornecido (pela API), nós o inserimos.
             insert_query = """
             INSERT INTO documentos (id_candidate, lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
             VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -279,7 +280,7 @@ def manage_db_connection(config, batch_id, batch_summary, document_results, cand
                 dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
                 categoria = doc.get("categoria", "N/A") 
                 docs_data_to_insert.append((
-                    candidato_id, # <-- NOVO CAMPO
+                    candidato_id, 
                     lote_fk, 
                     doc.get("arquivo", "Nome Indisponível"), 
                     doc.get("caminho", "Caminho Indisponível"), 
@@ -288,8 +289,6 @@ def manage_db_connection(config, batch_id, batch_summary, document_results, cand
                     dados_extraidos_json
                 ))
         else:
-            # Se o ID NÃO foi fornecido (ex: rodando via test_runner.py),
-            # deixamos o BD usar o DEFAULT gen_random_uuid().
             logging.warning(f"Nenhum candidato_id fornecido para o lote {batch_id}. Usando o DEFAULT do banco.")
             insert_query = """
             INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
@@ -307,7 +306,6 @@ def manage_db_connection(config, batch_id, batch_summary, document_results, cand
                     dados_extraidos_json
                 ))
         
-        # Executa a inserção em lote
         if docs_data_to_insert:
              cur.executemany(insert_query, docs_data_to_insert)
 
@@ -328,15 +326,13 @@ def manage_db_connection(config, batch_id, batch_summary, document_results, cand
               cur.close()
          if 'conn' in locals() and conn:
               conn.close()
-# --- FIM DA FUNÇÃO DE BD MODIFICADA ---
 
 
 def _processar_documento_individual(item, config):
     """
     Função "worker" que processa um único documento. 
-    (Esta função não precisa saber o candidato_id)
+    (Esta função NÃO chama init_models() - os modelos são globais)
     """
-    init_models() 
     
     if isinstance(item, dict) and 'path' in item:
          path = item['path']
@@ -358,8 +354,10 @@ def _processar_documento_individual(item, config):
         try:
             result["qualidade"] = assess_quality(abs_path, config)
             if "Aprovado" in result["qualidade"]:
+                # Esta função (classify_document_with_ocr) usa os modelos globais
                 result["categoria"] = classify_document_with_ocr(abs_path, config)
                 if "Erro" not in result["categoria"]: 
+                    # Esta função (extract_data) usa os modelos globais
                     result["dados_extraidos"] = extract_data(abs_path, result["categoria"], config)
                 else:
                      result["dados_extraidos"] = None
@@ -372,12 +370,14 @@ def _processar_documento_individual(item, config):
     return result
 
 
-# --- FUNÇÃO PRINCIPAL MODIFICADA ---
 def run_analysis_for_batch(batch_id, candidato_id=None):
     """
     Função principal que executa a análise completa para um único lote.
-    Agora aceita um candidato_id opcional.
+    Agora usa ThreadPoolExecutor para paralelismo seguro de memória.
     """
+    
+    # --- MUDANÇA AQUI: init_models() é chamado ANTES do pool ---
+    init_models() # Carrega os modelos de IA no processo principal
     
     config = load_config() 
     if not config:
@@ -402,12 +402,15 @@ def run_analysis_for_batch(batch_id, candidato_id=None):
         total_files = len(batch_data['files'])
         
         futures = []
-        with ProcessPoolExecutor(max_workers=None) as executor:
+        # --- MUDANÇA AQUI: Trocado Process por Thread ---
+        # Usamos os.cpu_count() para criar um número razoável de threads
+        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             
             for item in batch_data['files']:
+                # A função _processar_documento_individual agora usa os modelos globais
                 futures.append(executor.submit(_processar_documento_individual, item, config))
 
-            logging.info(f"Processando {total_files} arquivos em paralelo (aguardando conclusão)...")
+            logging.info(f"Processando {total_files} arquivos em threads (aguardando conclusão)...")
             
             for future in as_completed(futures):
                 try:
@@ -417,7 +420,7 @@ def run_analysis_for_batch(batch_id, candidato_id=None):
                 except Exception as e:
                     logging.error(f"Uma tarefa de processamento de documento falhou: {e}")
 
-        logging.info("Processamento paralelo concluído.")
+        logging.info("Processamento em threads concluído.")
 
 
     logging.info("Gerando sumário do lote...")
@@ -427,9 +430,7 @@ def run_analysis_for_batch(batch_id, candidato_id=None):
     print(json.dumps(batch_summary, indent=4, ensure_ascii=False))
     print("---------------------------------\n")
 
-    # --- CONTROLO DA CONEXÃO COM BD (Passando o candidato_id) ---
     manage_db_connection(config, batch_id, batch_summary, batch_results, candidato_id) 
-    # logging.info("--- MODO DE APRESENTAÇÃO: Conexão com BD desativada ---") 
 
     output_path_base = os.path.abspath(output_folder)
     output_path_lote = os.path.join(output_path_base, batch_id)

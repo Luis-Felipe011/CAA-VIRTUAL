@@ -8,7 +8,7 @@ import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
-import EmAnaliseReenvio from '../../../components/Steps/analise/EmAnaliseReenvio'
+import EmAnalise from '../../../components/Steps/analise/analise' // MUDANÇA: Usando o 'analise.tsx' simples
 import Resultado from '../../../components/Steps/resultado/resultado'
 
 export function Home() {
@@ -18,6 +18,9 @@ export function Home() {
   const [documents, setDocuments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [token, setToken] = useState<string | null>(null)
+
+  // --- NOVO ESTADO PARA GUARDAR O ID DO LOTE ---
+  const [batchId, setBatchId] = useState<string | null>(null)
 
   const handleStepChange = (novoStep: number) => {
     setEtapaAtual(novoStep);
@@ -52,12 +55,19 @@ export function Home() {
     autenticarECarregarCandidato()
   }, [autenticarECarregarCandidato])
 
-  // Avança para etapa "Análise" ao processar documentos
-  useEffect(() => {
-    const handleDocsProcessed = () => setEtapaAtual(4);
-    window.addEventListener('documentosProcessados', handleDocsProcessed);
-    return () => window.removeEventListener('documentosProcessados', handleDocsProcessed);
-  }, []);
+  // --- NOVA FUNÇÃO ---
+  // Chamada pelo DocumentProcessor quando o backend aceita o lote
+  const handleProcessamentoIniciado = (novoBatchId: string) => {
+    setBatchId(novoBatchId); // Guarda o ID do lote
+    setEtapaAtual(4); // Avança para a tela de Análise
+  };
+
+  // Esta função é chamada pelo EmAnalise quando o polling termina
+  const handleAnaliseConcluida = () => {
+    setEtapaAtual(5); // Avança para a tela de Resultado
+  };
+
+  // (Removido o useEffect do 'documentosProcessados', pois estamos usando props)
 
   useEffect(() => {
     if (!token) return
@@ -97,11 +107,23 @@ export function Home() {
     } else if (etapaAtual === 2) {
       return <InfoFamily onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 3) {
-      return <DocumentProcessor candidatoId={candidatoId} />
+      // Passa a nova função 'onProcessamentoIniciado'
+      return <DocumentProcessor 
+                candidatoId={candidatoId} 
+                onProcessamentoIniciado={handleProcessamentoIniciado} 
+             />
     } else if (etapaAtual === 4) {
-      return <EmAnaliseReenvio candidatoId={candidatoId} />
+      // Passa o batch_id e a função de callback
+      return <EmAnalise 
+                batchId={batchId} 
+                onAnaliseConcluida={handleAnaliseConcluida} 
+             />
     } else {
-      return <Resultado candidatoId={candidatoId ?? ''}/>
+      // Passa o candidatoId e o batchId (para reenvio)
+      return <Resultado 
+                candidatoId={candidatoId ?? ''} 
+                batchId={batchId}
+             />
     }
   }
 

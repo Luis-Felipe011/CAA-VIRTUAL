@@ -22,17 +22,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 4. CONFIGURAR EVENTOS DE STARTUP ---
+# --- 4. CONFIGURAR EVENTOS DE STARTUP (CORRIGIDO) ---
 @app.on_event("startup")
 def startup_event():
-    # Os modelos de IA agora são carregados em cada processo-filho 
-    # pelo analyzer.py, então não precisamos chamar init_models() aqui.
-    # Apenas carregamos a config para garantir que ela existe.
-    config = analyzer.load_config()
-    if config:
-        print("Configuração do analisador carregada com sucesso.")
-    else:
-        print("ERRO: Não foi possível carregar a configuração no startup.")
+    # --- CORREÇÃO AQUI ---
+    # Com o ThreadPoolExecutor, os modelos DEVEM ser carregados
+    # uma vez no processo principal (a API) ao iniciar.
+    print("Iniciando o servidor FastAPI...")
+    print("Carregando modelos de IA (EasyOCR e Donut)... Isso pode demorar.")
+    analyzer.init_models()
+    print("Modelos de IA carregados com sucesso. Servidor pronto.")
+    # --- FIM DA CORREÇÃO ---
 
 # --- 5. DEFINIR ENDPOINTS ---
 
@@ -48,8 +48,6 @@ async def documentos_reprovados(candidato_id: str = Query(...)):
             FROM documentos d
             WHERE d.id_candidate = %s AND d.qualidade NOT LIKE 'Aprovado%%'
         """, (candidato_id,))
-        # Nota: Se um candidato puder ter múltiplos lotes, 
-        # você pode precisar de um JOIN na tabela 'lotes' e ordenar por data.
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -142,7 +140,9 @@ async def get_resultado_lote(batch_id: str = Path(...)):
         lote_row = cur.fetchone()
         
         if not lote_row:
-            return JSONResponse(status_code=404, content={"status": "nao_encontrado", "message": "Lote não encontrado ou ainda não salvo."})
+            # Isso não é um erro, apenas significa que o processamento (que está em background)
+            # ainda não terminou e não salvou no banco.
+            return JSONResponse(status_code=200, content={"status": "processando", "message": "O lote ainda está sendo processado."})
 
         sumario = lote_row[0]
         

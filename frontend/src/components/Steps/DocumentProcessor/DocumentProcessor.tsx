@@ -23,9 +23,11 @@ interface DocumentFile {
 
 interface DocumentProcessorProps {
   candidatoId?: string | null;
+  // --- NOVA PROP RECEBIDA DO home.tsx ---
+  onProcessamentoIniciado: (batchId: string) => void;
 }
 
-const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) => {
+const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId, onProcessamentoIniciado }) => {
   const [documents, setDocuments] = useState<Record<DocKey, DocumentFile>>({
     rg: { file: null, uploaded: false, processing: false, processed: false },
     comprovante_renda: { file: null, uploaded: false, processing: false, processed: false },
@@ -34,6 +36,9 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
   });
 
   const { showToast } = useToast();
+  
+  // --- ESTADO DE LOADING PARA O BOTÃO PRINCIPAL ---
+  const [isProcessando, setIsProcessando] = useState(false);
 
   const processarTodosDocumentos = async () => {
     const arquivos = (Object.values(documents) as DocumentFile[])
@@ -54,27 +59,37 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
       formData.append('candidato_id', candidatoId);
     }
 
+    setIsProcessando(true); // Ativa o loading
+
     try {
       const response = await fetch('http://localhost:5003/processar_documentos', {
         method: 'POST',
         body: formData,
       });
-      await response.json();
-      setDocuments((prev) => {
-        const novo = { ...prev };
-        Object.keys(novo).forEach((key) => {
-          if (novo[key as DocKey].file) {
-            novo[key as DocKey].processed = true;
-          }
-        });
-        return novo;
-      });
-      showToast('Documentos enviados para análise!', 'success');
-      // Disparar evento customizado para avançar etapa
-      window.dispatchEvent(new CustomEvent('documentosProcessados'));
-    } catch (err) {
-      showToast('Erro ao processar documentos.', 'error');
+      
+      const data = await response.json(); // Lê a resposta do backend
+
+      if (!response.ok || response.status === 500) {
+        throw new Error(data.erro || "Falha no servidor");
+      }
+      
+      // --- LÓGICA CORRIGIDA ---
+      if (response.status === 202 && data.status === "processamento_iniciado") {
+        showToast('Documentos enviados para análise!', 'success');
+        
+        // Chama a função do 'home.tsx' para avançar a etapa
+        // e passar o ID do lote que o backend acabou de criar
+        onProcessamentoIniciado(data.batch_id); 
+      } else {
+         throw new Error("Resposta inesperada do servidor");
+      }
+      // --- FIM DA LÓGICA CORRIGIDA ---
+
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao processar documentos.', 'error');
+      setIsProcessando(false); // Desativa o loading em caso de erro
     }
+    // Não desativamos o loading em caso de sucesso, pois a página vai mudar
   };
 
   const getBadgeStatus = (doc: DocumentFile) => {
@@ -98,26 +113,8 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
     }));
   };
 
-  const processDocument = async (docType: DocKey) => {
-    setDocuments((prev) => ({
-      ...prev,
-      [docType]: {
-        ...prev[docType],
-        processing: true
-      }
-    }));
-    setTimeout(() => {
-      setDocuments((prev) => ({
-        ...prev,
-        [docType]: {
-          ...prev[docType],
-          processing: false,
-          processed: true,
-          result: { status: 'ok', nome: 'Exemplo', tipo: docType }
-        }
-      }));
-    }, 1500);
-  };
+  // Esta função não é mais necessária, pois processamos todos de uma vez
+  // const processDocument = async (docType: DocKey) => { ... };
 
   return (
   <div className="document-processor" style={{ maxHeight: '80vh', overflowY: 'auto', padding: 0, background: '#fff', boxShadow: 'none', margin: 0 }}>
@@ -147,25 +144,19 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
                       handleFileChange(docType as DocKey, e.target.files[0]);
                     }
                   }}
-                  disabled={doc.processing}
+                  disabled={isProcessando} // Desativa todos se estiver processando
                 />
               </label>
-              {doc.uploaded && !doc.processed && (
-                <Button
-                  onClick={() => processDocument(docType as DocKey)}
-                  text={doc.processing ? 'Processando...' : 'Processar'}
-                  color='secondary'
-                />
-              )}
+              {/* Removido o botão de processar individual */}
             </div>
-            {/* Detalhes do documento removidos para não exibir na tela */}
           </div>
         ))}
         <div style={{ textAlign: 'center', margin: '2rem 0' }}>
           <Button
             onClick={processarTodosDocumentos}
-            text="Processar Todos"
+            text={isProcessando ? "Enviando para análise..." : "Processar Todos"}
             color="primary"
+            
           />
         </div>
       </div>
