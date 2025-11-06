@@ -23,9 +23,11 @@ interface DocumentFile {
 
 interface DocumentProcessorProps {
   candidatoId?: string | null;
+  arquivosReprovados?: string[] | null;
+  onProcessarTodos?: () => void;
 }
 
-const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) => {
+const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId, arquivosReprovados, onProcessarTodos }) => {
   const [documents, setDocuments] = useState<Record<DocKey, DocumentFile>>({
     rg: { file: null, uploaded: false, processing: false, processed: false },
     comprovante_renda: { file: null, uploaded: false, processing: false, processed: false },
@@ -54,6 +56,8 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
       formData.append('candidato_id', candidatoId);
     }
 
+    // Troca para tela de análise imediatamente
+  if (typeof onProcessarTodos === 'function') onProcessarTodos();
     try {
       const response = await fetch('http://localhost:5003/processar_documentos', {
         method: 'POST',
@@ -70,8 +74,6 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
         return novo;
       });
       showToast('Documentos enviados para análise!', 'success');
-      // Disparar evento customizado para avançar etapa
-      window.dispatchEvent(new CustomEvent('documentosProcessados'));
     } catch (err) {
       showToast('Erro ao processar documentos.', 'error');
     }
@@ -119,10 +121,15 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
     }, 1500);
   };
 
+  // Se arquivosReprovados for fornecido, mostra apenas esses campos
+  const docsToShow = arquivosReprovados && arquivosReprovados.length > 0
+    ? Object.entries(documents).filter(([docType]) => arquivosReprovados.includes(docType))
+    : Object.entries(documents);
+
   return (
-  <div className="document-processor" style={{ maxHeight: '80vh', overflowY: 'auto', padding: 0, background: '#fff', boxShadow: 'none', margin: 0 }}>
+    <div className="document-processor" style={{ maxHeight: '80vh', overflowY: 'auto', padding: 0, background: '#fff', boxShadow: 'none', margin: 0 }}>
       <div className="document-list">
-        {Object.entries(documents).map(([docType, doc]) => (
+        {docsToShow.map(([docType, doc]) => (
           <div className="document-card" key={docType}>
             <div className="document-info">
               <div className="document-title">

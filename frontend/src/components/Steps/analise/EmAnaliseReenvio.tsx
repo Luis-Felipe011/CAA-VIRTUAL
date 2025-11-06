@@ -1,44 +1,16 @@
-import React, { useEffect, useState } from "react";
-import Button from "../../Button/Button";
-import "./analise.scss";
 
-interface DocumentoReprovado {
-  arquivo: string;
-  qualidade: string;
-  categoria: string;
-  dados_extraidos: any;
-}
+import React, { useEffect } from "react";
+import "./analise.scss";
 
 interface Props {
   candidatoId?: string | null;
 }
 
-const EmAnalise: React.FC<Props> = ({ candidatoId }) => {
-  const [reprovados, setReprovados] = useState<DocumentoReprovado[]>([]);
-  const [reenviando, setReenviando] = useState<string | null>(null);
-
+const EmAnalise: React.FC<Props> = () => {
   useEffect(() => {
-    if (!candidatoId) return;
-    fetch(`http://localhost:5003/documentos_reprovados?candidato_id=${candidatoId}`)
-      .then((res) => res.json())
-      .then((data) => setReprovados(data.reprovados || []));
-  }, [candidatoId]);
-
-  const handleReenvio = (arquivo: string, file: File) => {
-    setReenviando(arquivo);
-    const formData = new FormData();
-    formData.append("files", file);
-    if (candidatoId) formData.append("candidato_id", candidatoId);
-    fetch("http://localhost:5003/processar_documentos", {
-      method: "POST",
-      body: formData,
-    })
-      .then(() => {
-        setReenviando(null);
-        setReprovados((prev) => prev.filter((d) => d.arquivo !== arquivo));
-      })
-      .catch(() => setReenviando(null));
-  };
+    // Aqui pode-se simular um tempo de análise, ou aguardar evento do backend
+    // O avanço de etapa é controlado pelo Home.tsx via evento analiseFinalizada
+  }, []);
 
   return (
     <div className="em-analise-container">
@@ -48,30 +20,6 @@ const EmAnalise: React.FC<Props> = ({ candidatoId }) => {
         Você receberá uma notificação assim que o processo for concluído.
       </p>
       <div className="analise-loader"></div>
-      {reprovados.length > 0 && (
-        <div className="reprovados-box">
-          <h3>Documentos reprovados:</h3>
-          <ul>
-            {reprovados.map((doc) => (
-              <li key={doc.arquivo}>
-                <strong>{doc.arquivo}</strong> - {doc.qualidade}
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  style={{ marginLeft: 12 }}
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleReenvio(doc.arquivo, e.target.files[0]);
-                    }
-                  }}
-                  disabled={reenviando === doc.arquivo}
-                />
-                {reenviando === doc.arquivo && <span> Enviando...</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 };

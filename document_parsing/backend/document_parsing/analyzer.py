@@ -99,6 +99,7 @@ def classify_document_with_ocr(image_path, config):
         
         # Usar a imagem em escala de cinza (ou binarizada) para o OCR
         text = ' '.join(ocr_reader.readtext(gray_img, detail=0, paragraph=False)).lower() 
+        logging.info(f"[DEBUG OCR] Texto extraído do documento '{os.path.basename(image_path)}':\n{text}")
         
         classification_rules = config.get("classification_rules", {})
         for category, keywords in classification_rules.items():
@@ -186,7 +187,7 @@ def assess_quality(image_path, config):
         img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         if img is None: return "Reprovado (Erro ao ler imagem)"
         variance = cv2.Laplacian(img, cv2.CV_64F).var()
-        status = "Aprovado" if variance >= blur_threshold else f"Reprovado - Baixa nitidez ({variance:.2f})"
+        status = "Aprovado" if variance >= blur_threshold else f"Reprovado"
         logging.info(f"Avaliação de qualidade para '{os.path.basename(image_path)}': {status}")
         return status
     except Exception as e:
@@ -257,35 +258,42 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
         existing_lote = cur.fetchone()
         
         if existing_lote:
-             lote_fk = existing_lote[0]
-             logging.warning(f"Lote '{batch_id}' já existe no banco. Atualizando documentos...")
-             # Opcional: Poderia apagar documentos antigos antes de inserir novos
-             cur.execute("DELETE FROM documentos WHERE lote_fk = %s", (lote_fk,))
+            lote_fk = existing_lote[0]
+            logging.warning(f"Lote '{batch_id}' já existe no banco. Atualizando documentos...")
+            cur.execute("DELETE FROM documentos WHERE lote_fk = %s", (lote_fk,))
         else:
-             cur.execute("INSERT INTO lotes (lote_id, sumario) VALUES (%s, %s) RETURNING id", (batch_id, summary_json))
-             lote_fk = cur.fetchone()[0]
+            cur.execute("INSERT INTO lotes (lote_id, sumario) VALUES (%s, %s) RETURNING id", (batch_id, summary_json))
+            lote_fk = cur.fetchone()[0]
+
+        # Receber candidato_id corretamente como argumento (UUID do usuário)
+        # O batch_id não deve ser usado como id_candidate
+        # Aqui, tentamos obter o candidato_id do primeiro documento do lote, se presente
+        candidato_id = None
+        if document_results and 'candidato_id' in document_results[0]:
+            candidato_id = document_results[0]['candidato_id']
 
         insert_query = """
-        INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos, id_candidate) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         docs_data_to_insert = []
         for doc in document_results:
             dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
-            # Garante que a categoria não seja None antes de inserir
-            categoria = doc.get("categoria", "N/A") 
+            categoria = doc.get("categoria", "N/A")
+            # Usa o candidato_id correto se disponível, senão None
+            doc_candidato_id = doc.get('candidato_id', candidato_id)
             docs_data_to_insert.append((
-                lote_fk, 
-                doc.get("arquivo", "Nome Indisponível"), 
-                doc.get("caminho", "Caminho Indisponível"), 
-                doc.get("qualidade", "Qualidade Indisponível"), 
-                categoria, 
-                dados_extraidos_json
+                lote_fk,
+                doc.get("arquivo", "Nome Indisponível"),
+                doc.get("caminho", "Caminho Indisponível"),
+                doc.get("qualidade", "Qualidade Indisponível"),
+                categoria,
+                dados_extraidos_json,
+                doc_candidato_id
             ))
-        
-        # Executa a inserção em lote para mais eficiência
+
         if docs_data_to_insert:
-             cur.executemany(insert_query, docs_data_to_insert)
+            cur.executemany(insert_query, docs_data_to_insert)
 
         conn.commit()
         cur.close()

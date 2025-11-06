@@ -9,7 +9,7 @@ import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
 import EmAnaliseReenvio from '../../../components/Steps/analise/EmAnaliseReenvio'
-import Resultado from '../../../components/Steps/resultado/resultado'
+import ResultadoAprovado from '../../../components/Steps/resultado/ResultadoAprovado'
 
 export function Home() {
   const [etapaAtual, setEtapaAtual] = useState(1)
@@ -52,11 +52,13 @@ export function Home() {
     autenticarECarregarCandidato()
   }, [autenticarECarregarCandidato])
 
-  // Avança para etapa "Análise" ao processar documentos
+  // Avança para resultado ao finalizar análise
   useEffect(() => {
-    const handleDocsProcessed = () => setEtapaAtual(4);
-    window.addEventListener('documentosProcessados', handleDocsProcessed);
-    return () => window.removeEventListener('documentosProcessados', handleDocsProcessed);
+    const handleAnaliseFinalizada = () => setEtapaAtual(5); // Step 5: ResultadoAprovado
+    window.addEventListener('analiseFinalizada', handleAnaliseFinalizada);
+    return () => {
+      window.removeEventListener('analiseFinalizada', handleAnaliseFinalizada);
+    };
   }, []);
 
   useEffect(() => {
@@ -87,6 +89,9 @@ export function Home() {
     fetchChecklist()
   }, [token])
 
+  // Estado para controlar reenvio de documentos reprovados
+  const [arquivosReprovados, setArquivosReprovados] = useState<string[] | null>(null);
+
   function renderEtapa() {
     if (etapaAtual === 1) {
       return <InfoCandidate
@@ -97,11 +102,14 @@ export function Home() {
     } else if (etapaAtual === 2) {
       return <InfoFamily onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 3) {
-      return <DocumentProcessor candidatoId={candidatoId} />
+      return <DocumentProcessor candidatoId={candidatoId} arquivosReprovados={arquivosReprovados} onProcessarTodos={() => setEtapaAtual(4)} />
     } else if (etapaAtual === 4) {
-      return <EmAnaliseReenvio candidatoId={candidatoId} />
+      return <EmAnaliseReenvio candidatoId={candidatoId} />;
     } else {
-      return <Resultado candidatoId={candidatoId ?? ''}/>
+      return <ResultadoAprovado candidatoId={candidatoId} onReenviar={(arquivos) => {
+        setArquivosReprovados(arquivos);
+        setEtapaAtual(3);
+      }} />
     }
   }
 
