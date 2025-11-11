@@ -19,7 +19,10 @@ import re
 from datetime import datetime, timedelta
 import easyocr
 from unidecode import unidecode
-from concurrent.futures import ProcessPoolExecutor, as_completed 
+import signal
+from contextlib import contextmanager
+# --- MUDANÇA AQUI: Trocado Process por Thread ---
+from concurrent.futures import ThreadPoolExecutor, as_completed 
 
 # Configuração básica do logging para ver as mensagens no terminal
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,20 +34,24 @@ processor = None
 device = None
 
 def init_models():
-    """Inicializa os modelos de IA apenas na primeira chamada."""
+    """
+    Inicializa os modelos de IA apenas na primeira chamada.
+    AGORA É CHAMADO APENAS UMA VEZ, NO PROCESSO PRINCIPAL.
+    """
     global model_ai, ocr_reader, processor, device
     if model_ai is not None:
         return
 
-    logging.info(f"[Processo {os.getpid()}] Inicializando Modelos de IA (pode demorar)...")
+    # --- MUDANÇA AQUI: Removido o f"[Processo {os.getpid()}]" para clareza ---
+    logging.info(f"Inicializando Modelos de IA (pode demorar)...")
     try:
-        processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa", use_fast=True)
+        processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         model_ai = VisionEncoderDecoderModel.from_pretrained("naver-clova-ix/donut-base-finetuned-docvqa")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model_ai.to(device)
-        logging.info(f"[Processo {os.getpid()}] Modelo de Extração (Donut) inicializado em '{device}'.")
+        logging.info(f"Modelo de Extração (Donut) inicializado em '{device}'.")
         ocr_reader = easyocr.Reader(['pt'], gpu=False)
-        logging.info(f"[Processo {os.getpid()}] Modelo de Classificação (EasyOCR) inicializado.")
+        logging.info(f"Modelo de Classificação (EasyOCR) inicializado.")
     except Exception as e:
         logging.error(f"AVISO: Não foi possível carregar um dos modelos de IA. Erro: {e}")
 
@@ -83,42 +90,33 @@ def ask_ai(image_path, question):
         logging.error(f"Erro ao perguntar à IA para a imagem {os.path.basename(image_path)}: {e}")
         return ""
 
-# --- AQUI ESTÁ A OTIMIZAÇÃO DO GARGALO 1 ---
 def classify_document_with_ocr(image_path, config):
     """
     Classifica o documento usando EasyOCR, mas APENAS no topo da imagem (cabeçalho).
-    Isso é muito mais rápido que ler a imagem inteira, mas mantém a precisão.
     """
     if not ocr_reader: 
         logging.error("EasyOCR (ocr_reader) não foi inicializado.")
         return "Erro OCR"
         
     try:
-        # 1. Carrega a imagem com OpenCV
         img = cv2.imread(image_path)
         if img is None:
              logging.error(f"Não foi possível ler a imagem para OCR: {image_path}")
              return "Erro Leitura Imagem"
         
-        # 2. --- OTIMIZAÇÃO: CORTA A IMAGEM ---
-        # Pega a altura total e define o corte para os 40% superiores
         height = img.shape[0]
         crop_height = int(height * 0.40) # Corta em 40% do topo
         
-        # Se o corte for muito pequeno, usa a imagem inteira (evita erros)
         if crop_height < 50: 
             header_crop = img
         else:
-            header_crop = img[0:crop_height, :] # Pega de 0 até a altura do corte
+            header_crop = img[0:crop_height, :] 
 
-        # 3. Converte APENAS O CORTE para escala de cinza
         gray_crop = cv2.cvtColor(header_crop, cv2.COLOR_BGR2GRAY)
         
-        # 4. Executa o OCR APENAS NO CORTE (MUITO MAIS RÁPIDO)
         logging.info(f"Executando OCR otimizado (no cabeçalho) de: {os.path.basename(image_path)}")
         text = ' '.join(ocr_reader.readtext(gray_crop, detail=0, paragraph=False)).lower() 
         
-        # 5. Lógica de classificação original (agora com texto do cabeçalho)
         classification_rules = config.get("classification_rules", {})
         for category, keywords in classification_rules.items():
             if any(keyword in text for keyword in keywords):
@@ -131,7 +129,6 @@ def classify_document_with_ocr(image_path, config):
     except Exception as e:
         logging.error(f"Erro durante a classificação com OCR Otimizado para '{os.path.basename(image_path)}': {e}")
         return "Erro OCR"
-# --- FIM DA OTIMIZAÇÃO ---
 
 def extract_data(image_path, category, config):
     extraction_profiles = config.get("extraction_profiles", {})
@@ -253,10 +250,10 @@ def generate_batch_summary(batch_id, batch_results, config):
     summary['alerta_consistencia'] = alerta_consistencia
     return summary
 
-def manage_db_connection(config, batch_id, batch_summary, document_results):
+def manage_db_connection(config, batch_id, batch_summary, document_results, candidato_id=None):
     """
     (Versão Completa) Conecta-se ao banco de dados e salva os resultados.
-    Comente as linhas internas ou a chamada a esta função para desativar.
+    Agora inclui o candidato_id.
     """
     try:
         conn = psycopg2.connect(**config["db_credentials"])
@@ -273,22 +270,43 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
              cur.execute("INSERT INTO lotes (lote_id, sumario) VALUES (%s, %s) RETURNING id", (batch_id, summary_json))
              lote_fk = cur.fetchone()[0]
 
-        insert_query = """
-        INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
+        
         docs_data_to_insert = []
-        for doc in document_results:
-            dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
-            categoria = doc.get("categoria", "N/A") 
-            docs_data_to_insert.append((
-                lote_fk, 
-                doc.get("arquivo", "Nome Indisponível"), 
-                doc.get("caminho", "Caminho Indisponível"), 
-                doc.get("qualidade", "Qualidade Indisponível"), 
-                categoria, 
-                dados_extraidos_json
-            ))
+        
+        if candidato_id:
+            insert_query = """
+            INSERT INTO documentos (id_candidate, lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            for doc in document_results:
+                dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
+                categoria = doc.get("categoria", "N/A") 
+                docs_data_to_insert.append((
+                    candidato_id, 
+                    lote_fk, 
+                    doc.get("arquivo", "Nome Indisponível"), 
+                    doc.get("caminho", "Caminho Indisponível"), 
+                    doc.get("qualidade", "Qualidade Indisponível"), 
+                    categoria, 
+                    dados_extraidos_json
+                ))
+        else:
+            logging.warning(f"Nenhum candidato_id fornecido para o lote {batch_id}. Usando o DEFAULT do banco.")
+            insert_query = """
+            INSERT INTO documentos (lote_fk, arquivo, caminho, qualidade, categoria, dados_extraidos) 
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            for doc in document_results:
+                dados_extraidos_json = json.dumps(doc.get("dados_extraidos"), ensure_ascii=False) if doc.get("dados_extraidos") else None
+                categoria = doc.get("categoria", "N/A") 
+                docs_data_to_insert.append((
+                    lote_fk, 
+                    doc.get("arquivo", "Nome Indisponível"), 
+                    doc.get("caminho", "Caminho Indisponível"), 
+                    doc.get("qualidade", "Qualidade Indisponível"), 
+                    categoria, 
+                    dados_extraidos_json
+                ))
         
         if docs_data_to_insert:
              cur.executemany(insert_query, docs_data_to_insert)
@@ -315,9 +333,8 @@ def manage_db_connection(config, batch_id, batch_summary, document_results):
 def _processar_documento_individual(item, config):
     """
     Função "worker" que processa um único documento. 
-    Ela é chamada em um processo separado pelo ProcessPoolExecutor.
+    (Esta função NÃO chama init_models() - os modelos são globais)
     """
-    init_models() 
     
     if isinstance(item, dict) and 'path' in item:
          path = item['path']
@@ -328,33 +345,53 @@ def _processar_documento_individual(item, config):
          return None 
 
     abs_path = os.path.abspath(path)
-    logging.info(f"Processando ficheiro: {os.path.basename(abs_path)}")
+    logging.info(f"[INÍCIO] Processando ficheiro: {os.path.basename(abs_path)}")
     result = {"arquivo": os.path.basename(abs_path), "caminho": abs_path} 
 
     if isinstance(item, dict) and 'error' in item:
         result.update({"qualidade": f"Reprovado (Erro na conversão: {item['error']})", "categoria": "N/A", "dados_extraidos": None})
+        logging.info(f"[FIM] Documento com erro: {os.path.basename(abs_path)}")
     elif not os.path.exists(abs_path):
          result.update({"qualidade": "Reprovado (Ficheiro não encontrado após conversão)", "categoria": "N/A", "dados_extraidos": None})
+         logging.info(f"[FIM] Ficheiro não encontrado: {os.path.basename(abs_path)}")
     else:
         try:
+            logging.info(f"[QUALIDADE] Avaliando qualidade de: {os.path.basename(abs_path)}")
             result["qualidade"] = assess_quality(abs_path, config)
+            logging.info(f"[QUALIDADE] Resultado: {result['qualidade']}")
+            
             if "Aprovado" in result["qualidade"]:
+                # Esta função (classify_document_with_ocr) usa os modelos globais
+                logging.info(f"[CLASSIFICAÇÃO] Classificando: {os.path.basename(abs_path)}")
                 result["categoria"] = classify_document_with_ocr(abs_path, config)
+                logging.info(f"[CLASSIFICAÇÃO] Categoria: {result['categoria']}")
+                
                 if "Erro" not in result["categoria"]: 
+                    # Esta função (extract_data) usa os modelos globais
+                    logging.info(f"[EXTRAÇÃO] Extraindo dados de: {os.path.basename(abs_path)}")
                     result["dados_extraidos"] = extract_data(abs_path, result["categoria"], config)
+                    logging.info(f"[EXTRAÇÃO] Dados extraídos: {bool(result['dados_extraidos'])}")
                 else:
                      result["dados_extraidos"] = None
             else:
                 result.update({"categoria": "N/A", "dados_extraidos": None})
+                logging.info(f"[QUALIDADE] Documento reprovado, sem extração")
         except Exception as proc_err:
-             logging.error(f"Erro inesperado ao processar '{os.path.basename(abs_path)}': {proc_err}")
+             logging.error(f"[ERRO] Erro inesperado ao processar '{os.path.basename(abs_path)}': {proc_err}")
              result.update({"qualidade": "Reprovado (Erro no processamento)", "categoria": "N/A", "dados_extraidos": None})
-
+    
+    logging.info(f"[FIM] Processamento concluído para: {os.path.basename(abs_path)}")
     return result
 
 
-def run_analysis_for_batch(batch_id):
-    """Função principal que executa a análise completa para um único lote."""
+def run_analysis_for_batch(batch_id, candidato_id=None):
+    """
+    Função principal que executa a análise completa para um único lote.
+    Agora usa ThreadPoolExecutor para paralelismo seguro de memória.
+    """
+    
+    # --- MUDANÇA AQUI: init_models() é chamado ANTES do pool ---
+    init_models() # Carrega os modelos de IA no processo principal
     
     config = load_config() 
     if not config:
@@ -379,22 +416,50 @@ def run_analysis_for_batch(batch_id):
         total_files = len(batch_data['files'])
         
         futures = []
-        # Limite de workers para evitar sobrecarga de RAM em máquinas com 8GB
-        with ProcessPoolExecutor(max_workers=2) as executor:
+        # --- MUDANÇA AQUI: Trocado Process por Thread ---
+        # Limitado a 2 workers para evitar uso excessivo de RAM
+        with ThreadPoolExecutor(max_workers=2) as executor:
             for item in batch_data['files']:
                 futures.append(executor.submit(_processar_documento_individual, item, config))
 
-            logging.info(f"Processando {total_files} arquivos em paralelo (máx 2 ao mesmo tempo, aguardando conclusão)...")
+            logging.info(f"Processando {total_files} arquivos em threads (aguardando conclusão)...")
+            completed_count = 0
+            future_to_item = {future: item for future, item in zip(futures, batch_data['files'])}
+            try:
+                for future in as_completed(futures, timeout=600):
+                    try:
+                        res = future.result(timeout=600)
+                        if res:
+                            batch_results.append(res)
+                            completed_count += 1
+                            logging.info(f"✅ Progresso: {completed_count}/{total_files} documentos concluídos")
+                    except Exception as e:
+                        item = future_to_item.get(future)
+                        logging.error(f"❌ Uma tarefa de processamento de documento falhou: {e}")
+                        batch_results.append({
+                            "arquivo": os.path.basename(item if isinstance(item, str) else item.get('path', 'desconhecido')),
+                            "caminho": os.path.abspath(item if isinstance(item, str) else item.get('path', '')),
+                            "qualidade": f"Reprovado (Erro: {e})",
+                            "categoria": "N/A",
+                            "dados_extraidos": None
+                        })
+                        completed_count += 1
+            except TimeoutError:
+                # Marcar todos os futuros não finalizados como timeout
+                unfinished = [f for f in futures if not f.done()]
+                for future in unfinished:
+                    item = future_to_item.get(future)
+                    logging.error(f"❌ Timeout ao processar documento (mais de 10 minutos)")
+                    batch_results.append({
+                        "arquivo": os.path.basename(item if isinstance(item, str) else item.get('path', 'desconhecido')),
+                        "caminho": os.path.abspath(item if isinstance(item, str) else item.get('path', '')),
+                        "qualidade": "Reprovado (Timeout)",
+                        "categoria": "N/A",
+                        "dados_extraidos": None
+                    })
+                    completed_count += 1
 
-            for future in as_completed(futures):
-                try:
-                    res = future.result()
-                    if res:
-                        batch_results.append(res)
-                except Exception as e:
-                    logging.error(f"Uma tarefa de processamento de documento falhou: {e}")
-
-        logging.info("Processamento paralelo concluído.")
+            logging.info(f"✅ Processamento em threads concluído. Total processado: {len(batch_results)}/{total_files}")
 
 
     logging.info("Gerando sumário do lote...")
@@ -404,8 +469,7 @@ def run_analysis_for_batch(batch_id):
     print(json.dumps(batch_summary, indent=4, ensure_ascii=False))
     print("---------------------------------\n")
 
-    manage_db_connection(config, batch_id, batch_summary, batch_results) 
-    # logging.info("--- MODO DE APRESENTAÇÃO: Conexão com BD desativada ---") 
+    manage_db_connection(config, batch_id, batch_summary, batch_results, candidato_id) 
 
     output_path_base = os.path.abspath(output_folder)
     output_path_lote = os.path.join(output_path_base, batch_id)

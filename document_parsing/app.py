@@ -22,17 +22,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 4. CONFIGURAR EVENTOS DE STARTUP ---
+# --- 4. CONFIGURAR EVENTOS DE STARTUP (CORRIGIDO) ---
 @app.on_event("startup")
 def startup_event():
-    # O init_models() agora é chamado dentro de cada processo-filho 
-    # pelo analyzer.py, então não precisamos chamar aqui, 
-    # mas carregar a config é uma boa ideia.
-    config = analyzer.load_config()
-    if config:
-        print("Configuração carregada com sucesso.")
-    else:
-        print("ERRO: Não foi possível carregar a configuração no startup.")
+    # --- CORREÇÃO AQUI ---
+    # Com o ThreadPoolExecutor, os modelos DEVEM ser carregados
+    # uma vez no processo principal (a API) ao iniciar.
+    print("Iniciando o servidor FastAPI...")
+    print("Carregando modelos de IA (EasyOCR e Donut)... Isso pode demorar.")
+    analyzer.init_models()
+    print("Modelos de IA carregados com sucesso. Servidor pronto.")
+    # --- FIM DA CORREÇÃO ---
 
 # --- 5. DEFINIR ENDPOINTS ---
 
@@ -42,13 +42,12 @@ async def documentos_reprovados(candidato_id: str = Query(...)):
     try:
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
+        # A sua query SQL para a nova tabela
         cur.execute("""
             SELECT d.arquivo, d.qualidade, d.categoria, d.dados_extraidos
             FROM documentos d
-            JOIN lotes l ON d.lote_fk = l.id
-            WHERE l.lote_id LIKE %s AND d.qualidade NOT LIKE 'Aprovado%%'
-            ORDER BY l.id DESC
-        """, (f'%{candidato_id}%',))
+            WHERE d.id_candidate = %s AND d.qualidade NOT LIKE 'Aprovado%%'
+        """, (candidato_id,))
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -67,18 +66,17 @@ async def processar_documentos(
     files: List[UploadFile] = File(...)
 ):
     form = await request.form()
-    candidato_id = form.get("candidato_id") # Opcional
+    candidato_id = form.get("candidato_id") # O ID do candidato (UUID)
     
+    if not candidato_id:
+        return JSONResponse(status_code=400, content={"erro": "candidato_id é obrigatório."})
+
     config = analyzer.load_config()
     if not config:
         return JSONResponse(status_code=500, content={"erro": "Configuração do analisador não encontrada"})
 
     # 1. Cria um ID de lote único
-    # Usamos o candidato_id se ele existir, para rastreamento
-    if candidato_id:
-        batch_id = f"{candidato_id}_{uuid.uuid4().hex[:8]}"
-    else:
-        batch_id = f"api_batch_{uuid.uuid4().hex[:8]}"
+    batch_id = f"{candidato_id}_{uuid.uuid4().hex[:8]}"
     
     # 2. Cria a pasta de lote temporária (onde o analyzer espera)
     input_folder_base = config["folder_paths"]["input"]
@@ -97,25 +95,23 @@ async def processar_documentos(
                 content = await file.read()
                 buffer.write(content)
         except Exception as e:
-            # Em caso de falha, limpa a pasta e retorna erro
-            shutil.rmtree(batch_folder_path)
+            shutil.rmtree(batch_folder_path) # Limpa em caso de falha
             return JSONResponse(status_code=500, content={"erro": f"Falha ao salvar o arquivo {file.filename}: {e}"})
 
     # 4. Agenda a tarefa pesada (analyzer.py) para rodar em segundo plano
-    # O analyzer.py fará todo o trabalho: paralelismo, salvar no DB, e mover a pasta
-    background_tasks.add_task(analyzer.run_analysis_for_batch, batch_id)
+    #    *** AQUI PASSAMOS O candidato_id PARA O ANALYZER ***
+    background_tasks.add_task(analyzer.run_analysis_for_batch, batch_id, candidato_id)
     
-    # 5. (Opcional) Atualiza o step do candidato IMEDIATAMENTE
-    if candidato_id:
-        try:
-            conn = psycopg2.connect(**config["db_credentials"])
-            cur = conn.cursor()
-            cur.execute("UPDATE candidate SET step = 4 WHERE id = %s", (candidato_id,))
-            conn.commit()
-            cur.close()
-            conn.close()
-        except Exception as e:
-            print(f"Erro ao atualizar step do candidato: {e}") # Não retorna erro, só loga
+    # 5. Atualiza o step do candidato IMEDIATAMENTE
+    try:
+        conn = psycopg2.connect(**config["db_credentials"])
+        cur = conn.cursor()
+        cur.execute("UPDATE candidate SET step = 4 WHERE id = %s", (candidato_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Erro ao atualizar step do candidato: {e}") # Não retorna erro, só loga
 
     # 6. Retorna a resposta IMEDIATAMENTE para o frontend
     return JSONResponse(
@@ -144,7 +140,9 @@ async def get_resultado_lote(batch_id: str = Path(...)):
         lote_row = cur.fetchone()
         
         if not lote_row:
-            return JSONResponse(status_code=404, content={"status": "nao_encontrado", "message": "Lote não encontrado ou ainda não salvo."})
+            # Isso não é um erro, apenas significa que o processamento (que está em background)
+            # ainda não terminou e não salvou no banco.
+            return JSONResponse(status_code=200, content={"status": "processando", "message": "O lote ainda está sendo processado."})
 
         sumario = lote_row[0]
         

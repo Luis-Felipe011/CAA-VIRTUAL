@@ -14,6 +14,7 @@ import Resultado from '../../../components/Steps/resultado/resultado'
 export function Home() {
   const [etapaAtual, setEtapaAtual] = useState(1)
   const [candidatoId, setCandidatoId] = useState<string | null>(null)
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [nomeUsuario, setNomeUsuario] = useState('Usuário')
   const [documents, setDocuments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,7 +55,12 @@ export function Home() {
 
   // Avança para etapa "Análise" ao processar documentos
   useEffect(() => {
-    const handleDocsProcessed = () => setEtapaAtual(4);
+    const handleDocsProcessed = (e: any) => {
+      if (e && e.detail && e.detail.batch_id) {
+        setBatchId(e.detail.batch_id);
+      }
+      setEtapaAtual(4);
+    };
     window.addEventListener('documentosProcessados', handleDocsProcessed);
     return () => window.removeEventListener('documentosProcessados', handleDocsProcessed);
   }, []);
@@ -101,7 +107,7 @@ export function Home() {
     } else if (etapaAtual === 4) {
       return <EmAnaliseReenvio candidatoId={candidatoId} />
     } else {
-      return <Resultado candidatoId={candidatoId ?? ''}/>
+  return <Resultado batchId={batchId} candidatoId={candidatoId ?? ''} onStepChange={handleStepChange}/>
     }
   }
 

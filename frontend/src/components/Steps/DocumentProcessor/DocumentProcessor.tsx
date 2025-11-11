@@ -59,7 +59,7 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
         method: 'POST',
         body: formData,
       });
-      await response.json();
+      const data = await response.json();
       setDocuments((prev) => {
         const novo = { ...prev };
         Object.keys(novo).forEach((key) => {
@@ -70,8 +70,12 @@ const DocumentProcessor: React.FC<DocumentProcessorProps> = ({ candidatoId }) =>
         return novo;
       });
       showToast('Documentos enviados para análise!', 'success');
-      // Disparar evento customizado para avançar etapa
-      window.dispatchEvent(new CustomEvent('documentosProcessados'));
+      // Disparar evento customizado com batch_id para avançar etapa
+      if (data && data.batch_id) {
+        window.dispatchEvent(new CustomEvent('documentosProcessados', { detail: { batch_id: data.batch_id } }));
+      } else {
+        window.dispatchEvent(new CustomEvent('documentosProcessados'));
+      }
     } catch (err) {
       showToast('Erro ao processar documentos.', 'error');
     }
