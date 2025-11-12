@@ -8,16 +8,16 @@ import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
-import EmAnalise from '../../../components/Steps/analise/analise' // ATENÇÃO: Importe o analise.tsx, não o Reenvio
+import EmAnalise from '../../../components/Steps/analise/analise'
 import Resultado from '../../../components/Steps/resultado/resultado'
 
 export function Home() {
   const [etapaAtual, setEtapaAtual] = useState(1)
   const [candidatoId, setCandidatoId] = useState<string | null>(null)
-  const [nomeUsuario, setNomeUsuario] = useState('Usuário')
+  const [nomeUsuario, setNomeUsuario] = useState('Carregando...')
   const [loading, setLoading] = useState(true)
   
-  // --- ESTADO CRÍTICO: Guarda o ID do lote atual ---
+  // Estado para o fluxo de documentos
   const [batchId, setBatchId] = useState<string | null>(null)
 
   const handleStepChange = (novoStep: number) => {
@@ -26,23 +26,39 @@ export function Home() {
 
   const autenticarECarregarCandidato = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
+    
     if (!session || !session.user) {
       window.location.href = "/"
       return
     }
+    
+    const userId = session.user.id;
+    setCandidatoId(userId);
+
+    // Busca dados do candidato (tenta ser tolerante a falhas)
     const { data } = await supabase
       .from('candidate')
       .select('nome, step')
-      .eq('id', session.user.id)
-      .single()
+      .eq('id', userId)
+      .maybeSingle()
     
-    setCandidatoId(session.user.id)
+    // Lógica restaurada (mais robusta)
+    const emailName = session.user.email?.split('@')[0] || 'Usuário';
     
     if (data) {
-      setNomeUsuario(data.nome || 'Usuário')
-      // Se já estava no passo 4 ou 5, mantém, senão começa do 1
-      setEtapaAtual(typeof data.step === "number" ? data.step : 1)
+      // Se achou o registro, usa o nome (ou o email se o nome estiver vazio)
+      setNomeUsuario(data.nome || emailName)
+      
+      // Respeita o step salvo no banco
+      if (typeof data.step === 'number' && data.step > 0) {
+          setEtapaAtual(data.step)
+      }
+    } else {
+      // Se não achou registro no banco, usa o email e começa na etapa 1
+      setNomeUsuario(emailName)
+      setEtapaAtual(1)
     }
+    
     setLoading(false)
   }, [])
 
@@ -50,17 +66,16 @@ export function Home() {
     autenticarECarregarCandidato()
   }, [autenticarECarregarCandidato])
 
-  // Função chamada quando o upload termina
+  // --- HANDLERS DO FLUXO DE DOCUMENTOS ---
   const handleProcessamentoIniciado = (novoBatchId: string) => {
-    console.log("Processamento iniciado com Batch ID:", novoBatchId);
+    console.log("Batch iniciado:", novoBatchId);
     setBatchId(novoBatchId); 
-    setEtapaAtual(4); // Vai para a tela de análise
+    setEtapaAtual(4); // Vai para Análise
   };
 
-  // Função chamada quando a análise termina
   const handleAnaliseConcluida = () => {
-    console.log("Análise concluída!");
-    setEtapaAtual(5); // Vai para o resultado
+    console.log("Análise concluída.");
+    setEtapaAtual(5); // Vai para Resultado
   };
 
   function renderEtapa() {
@@ -73,19 +88,16 @@ export function Home() {
     } else if (etapaAtual === 2) {
       return <InfoFamily onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 3) {
-      // Passo 3: Upload
       return <DocumentProcessor 
                 candidatoId={candidatoId} 
                 onProcessamentoIniciado={handleProcessamentoIniciado} 
              />
     } else if (etapaAtual === 4) {
-      // Passo 4: Polling (Análise)
       return <EmAnalise 
                 batchId={batchId} 
                 onAnaliseConcluida={handleAnaliseConcluida} 
              />
     } else {
-      // Passo 5: Resultado
       return <Resultado 
                 candidatoId={candidatoId ?? ''} 
                 batchId={batchId}
