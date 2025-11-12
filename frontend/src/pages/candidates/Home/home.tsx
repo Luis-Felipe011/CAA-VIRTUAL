@@ -8,90 +8,60 @@ import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
-import EmAnaliseReenvio from '../../../components/Steps/analise/EmAnaliseReenvio'
+import EmAnalise from '../../../components/Steps/analise/analise' // ATENÇÃO: Importe o analise.tsx, não o Reenvio
 import Resultado from '../../../components/Steps/resultado/resultado'
 
 export function Home() {
   const [etapaAtual, setEtapaAtual] = useState(1)
   const [candidatoId, setCandidatoId] = useState<string | null>(null)
-  const [batchId, setBatchId] = useState<string | null>(null);
   const [nomeUsuario, setNomeUsuario] = useState('Usuário')
-  const [documents, setDocuments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [token, setToken] = useState<string | null>(null)
+  
+  // --- ESTADO CRÍTICO: Guarda o ID do lote atual ---
+  const [batchId, setBatchId] = useState<string | null>(null)
 
   const handleStepChange = (novoStep: number) => {
     setEtapaAtual(novoStep);
   };
 
-  // Função para autenticação e carregamento do candidato
   const autenticarECarregarCandidato = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session || !session.user) {
       window.location.href = "/"
       return
     }
-    setToken(session.access_token)
     const { data } = await supabase
       .from('candidate')
       .select('nome, step')
       .eq('id', session.user.id)
       .single()
+    
     setCandidatoId(session.user.id)
+    
     if (data) {
-      setNomeUsuario(data.nome || session.user.email?.split('@')[0] || 'Usuário')
+      setNomeUsuario(data.nome || 'Usuário')
+      // Se já estava no passo 4 ou 5, mantém, senão começa do 1
       setEtapaAtual(typeof data.step === "number" ? data.step : 1)
-    } else {
-      setNomeUsuario(session.user.email?.split('@')[0] || 'Usuário')
-      setEtapaAtual(1)
     }
     setLoading(false)
   }, [])
-
 
   useEffect(() => {
     autenticarECarregarCandidato()
   }, [autenticarECarregarCandidato])
 
-  // Avança para etapa "Análise" ao processar documentos
-  useEffect(() => {
-    const handleDocsProcessed = (e: any) => {
-      if (e && e.detail && e.detail.batch_id) {
-        setBatchId(e.detail.batch_id);
-      }
-      setEtapaAtual(4);
-    };
-    window.addEventListener('documentosProcessados', handleDocsProcessed);
-    return () => window.removeEventListener('documentosProcessados', handleDocsProcessed);
-  }, []);
+  // Função chamada quando o upload termina
+  const handleProcessamentoIniciado = (novoBatchId: string) => {
+    console.log("Processamento iniciado com Batch ID:", novoBatchId);
+    setBatchId(novoBatchId); 
+    setEtapaAtual(4); // Vai para a tela de análise
+  };
 
-  useEffect(() => {
-    if (!token) return
-    async function fetchChecklist() {
-      try {
-        const resposta = await fetch("http://localhost:5000/api/checklist", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        })
-        const json = await resposta.json()
-        if (json.checklist && Array.isArray(json.checklist)) {
-          const docs = json.checklist.map((item: any[]) => ({
-            id: item[0],
-            numero: item[1],
-            nome: item[2],
-            categoria: item[3]
-          }))
-          setDocuments(docs)
-        }
-      } catch (error) {
-        console.error(error)
-      }
-    }
-    fetchChecklist()
-  }, [token])
+  // Função chamada quando a análise termina
+  const handleAnaliseConcluida = () => {
+    console.log("Análise concluída!");
+    setEtapaAtual(5); // Vai para o resultado
+  };
 
   function renderEtapa() {
     if (etapaAtual === 1) {
@@ -103,17 +73,27 @@ export function Home() {
     } else if (etapaAtual === 2) {
       return <InfoFamily onStepChange={handleStepChange} candidatoId={candidatoId ?? ''} />
     } else if (etapaAtual === 3) {
-      return <DocumentProcessor candidatoId={candidatoId} />
+      // Passo 3: Upload
+      return <DocumentProcessor 
+                candidatoId={candidatoId} 
+                onProcessamentoIniciado={handleProcessamentoIniciado} 
+             />
     } else if (etapaAtual === 4) {
-      return <EmAnaliseReenvio candidatoId={candidatoId} />
+      // Passo 4: Polling (Análise)
+      return <EmAnalise 
+                batchId={batchId} 
+                onAnaliseConcluida={handleAnaliseConcluida} 
+             />
     } else {
-  return <Resultado batchId={batchId} candidatoId={candidatoId ?? ''} onStepChange={handleStepChange}/>
+      // Passo 5: Resultado
+      return <Resultado 
+                candidatoId={candidatoId ?? ''} 
+                batchId={batchId}
+             />
     }
   }
 
-  if (loading) {
-    return <div className="loading">Carregando...</div>
-  }
+  if (loading) return <div className="loading">Carregando...</div>
 
   return (
     <div className="container" style={{ height: '100vh', overflowY: 'auto' }}>
@@ -127,13 +107,12 @@ export function Home() {
         />
       </header>
 
-  <div className="content" style={{ marginLeft: 0 }}>
+      <div className="content" style={{ marginLeft: 0 }}>
         <div style={{ padding: '2rem' }}>
           <StepsVertical etapaAtual={etapaAtual} />
         </div>
         <div className="page">{renderEtapa()}</div>
       </div>
-
       <Chatbot />
     </div>
   )

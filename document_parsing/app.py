@@ -8,6 +8,7 @@ import os
 import uuid
 import shutil # Importado para criar e mover pastas
 import psycopg2 
+import json
 from backend.document_parsing import analyzer
 
 # --- 2. CRIAR A INSTÂNCIA DO APP ---
@@ -22,17 +23,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 4. CONFIGURAR EVENTOS DE STARTUP (CORRIGIDO) ---
+# --- 4. CONFIGURAR EVENTOS DE STARTUP ---
 @app.on_event("startup")
 def startup_event():
-    # --- CORREÇÃO AQUI ---
-    # Com o ThreadPoolExecutor, os modelos DEVEM ser carregados
-    # uma vez no processo principal (a API) ao iniciar.
+    # Carrega os modelos UMA VEZ no processo principal
+    # Isso permite que o analyzer use ThreadPoolExecutor sem travar
     print("Iniciando o servidor FastAPI...")
     print("Carregando modelos de IA (EasyOCR e Donut)... Isso pode demorar.")
     analyzer.init_models()
     print("Modelos de IA carregados com sucesso. Servidor pronto.")
-    # --- FIM DA CORREÇÃO ---
 
 # --- 5. DEFINIR ENDPOINTS ---
 
@@ -42,7 +41,6 @@ async def documentos_reprovados(candidato_id: str = Query(...)):
     try:
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
-        # A sua query SQL para a nova tabela
         cur.execute("""
             SELECT d.arquivo, d.qualidade, d.categoria, d.dados_extraidos
             FROM documentos d
@@ -58,7 +56,6 @@ async def documentos_reprovados(candidato_id: str = Query(...)):
     except Exception as e:
         return {"erro": str(e)}
 
-# --- ENDPOINT /processar_documentos (REFEITO PARA USAR BACKGROUND TASKS) ---
 @app.post("/processar_documentos")
 async def processar_documentos(
     request: Request, 
@@ -78,7 +75,7 @@ async def processar_documentos(
     # 1. Cria um ID de lote único
     batch_id = f"{candidato_id}_{uuid.uuid4().hex[:8]}"
     
-    # 2. Cria a pasta de lote temporária (onde o analyzer espera)
+    # 2. Cria a pasta de lote temporária
     input_folder_base = config["folder_paths"]["input"]
     batch_folder_path = os.path.join(input_folder_base, batch_id)
     
@@ -87,7 +84,7 @@ async def processar_documentos(
     except Exception as e:
         return JSONResponse(status_code=500, content={"erro": f"Não foi possível criar pasta do lote: {e}"})
 
-    # 3. Salva os arquivos (upload) DENTRO da pasta do lote
+    # 3. Salva os arquivos
     for file in files:
         file_path = os.path.join(batch_folder_path, file.filename)
         try:
@@ -98,11 +95,10 @@ async def processar_documentos(
             shutil.rmtree(batch_folder_path) # Limpa em caso de falha
             return JSONResponse(status_code=500, content={"erro": f"Falha ao salvar o arquivo {file.filename}: {e}"})
 
-    # 4. Agenda a tarefa pesada (analyzer.py) para rodar em segundo plano
-    #    *** AQUI PASSAMOS O candidato_id PARA O ANALYZER ***
+    # 4. Agenda a tarefa pesada (analyzer.py)
     background_tasks.add_task(analyzer.run_analysis_for_batch, batch_id, candidato_id)
     
-    # 5. Atualiza o step do candidato IMEDIATAMENTE
+    # 5. Atualiza o step
     try:
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
@@ -111,11 +107,11 @@ async def processar_documentos(
         cur.close()
         conn.close()
     except Exception as e:
-        print(f"Erro ao atualizar step do candidato: {e}") # Não retorna erro, só loga
+        print(f"Erro ao atualizar step do candidato: {e}")
 
-    # 6. Retorna a resposta IMEDIATAMENTE para o frontend
+    # 6. Retorna a resposta IMEDIATAMENTE
     return JSONResponse(
-        status_code=202, # 202 "Accepted" (Aceito)
+        status_code=202,
         content={
             "status": "processamento_iniciado",
             "message": "Os documentos foram recebidos e estão sendo processados.",
@@ -123,30 +119,21 @@ async def processar_documentos(
         }
     )
 
-# --- NOVO ENDPOINT: Para o frontend buscar o resultado ---
 @app.get("/resultado_lote/{batch_id}")
 async def get_resultado_lote(batch_id: str = Path(...)):
-    """
-    Consulta o banco de dados para ver o resultado de um lote 
-    que foi processado em segundo plano.
-    """
     config = analyzer.load_config()
     try:
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
         
-        # 1. Busca o sumário do lote
         cur.execute("SELECT sumario FROM lotes WHERE lote_id = %s", (batch_id,))
         lote_row = cur.fetchone()
         
         if not lote_row:
-            # Isso não é um erro, apenas significa que o processamento (que está em background)
-            # ainda não terminou e não salvou no banco.
-            return JSONResponse(status_code=200, content={"status": "processando", "message": "O lote ainda está sendo processado."})
+            return JSONResponse(status_code=200, content={"status": "processando", "message": "Lote não encontrado ou ainda não salvo."})
 
         sumario = lote_row[0]
         
-        # 2. Busca os documentos processados
         cur.execute("""
             SELECT arquivo, qualidade, categoria, dados_extraidos
             FROM documentos d
@@ -168,6 +155,75 @@ async def get_resultado_lote(batch_id: str = Path(...)):
             "sumario": sumario,
             "documentos": documentos
         }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"erro": str(e)})
+
+# --- NOVOS ENDPOINTS (QUE ESTAVAM FALTANDO PARA O RESULTADO.TSX) ---
+
+@app.get("/candidato/{candidato_id}/todos_documentos")
+async def get_todos_documentos_candidato(candidato_id: str):
+    """Retorna o último processamento de CADA arquivo do candidato."""
+    config = analyzer.load_config()
+    try:
+        conn = psycopg2.connect(**config["db_credentials"])
+        cur = conn.cursor()
+        # Pega o registro mais recente de cada arquivo único para este candidato
+        cur.execute("""
+            SELECT DISTINCT ON (d.arquivo) 
+                d.arquivo, d.qualidade, d.categoria, d.dados_extraidos
+            FROM documentos d
+            WHERE d.id_candidate = %s
+            ORDER BY d.arquivo, d.id DESC
+        """, (candidato_id,))
+        
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        documentos = [
+            {"arquivo": r[0], "qualidade": r[1], "categoria": r[2], "dados_extraidos": r[3]} for r in rows
+        ]
+        return {"documentos": documentos}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"erro": str(e)})
+
+@app.patch("/documento/dados")
+async def atualizar_dados_documento(request: Request):
+    """Atualiza o JSON de dados extraídos de um documento específico."""
+    data = await request.json()
+    candidato_id = data.get("candidato_id")
+    arquivo = data.get("arquivo")
+    novos_dados = data.get("dados")
+
+    if not candidato_id or not arquivo or not novos_dados:
+        return JSONResponse(status_code=400, content={"erro": "Dados incompletos"})
+
+    config = analyzer.load_config()
+    try:
+        conn = psycopg2.connect(**config["db_credentials"])
+        cur = conn.cursor()
+        
+        # Atualiza o registro mais recente deste arquivo para este candidato
+        cur.execute("""
+            UPDATE documentos
+            SET dados_extraidos = %s
+            WHERE id = (
+                SELECT id FROM documentos
+                WHERE id_candidate = %s AND arquivo = %s
+                ORDER BY id DESC
+                LIMIT 1
+            )
+        """, (json.dumps(novos_dados, ensure_ascii=False), candidato_id, arquivo))
+        
+        conn.commit()
+        updated_rows = cur.rowcount
+        cur.close()
+        conn.close()
+        
+        if updated_rows == 0:
+             return JSONResponse(status_code=404, content={"erro": "Documento não encontrado no banco."})
+
+        return {"status": "sucesso", "mensagem": "Dados atualizados com sucesso"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"erro": str(e)})
 

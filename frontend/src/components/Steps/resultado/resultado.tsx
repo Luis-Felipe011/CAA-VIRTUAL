@@ -1,214 +1,259 @@
-import React, { useEffect, useState, useRef } from "react";
-import Modal from '../../Modal/Modal';
-
-// Componente para documento rejeitado com opção de reenvio
-const RejeitadoCard: React.FC<{ file: FileEntry; candidatoId: string; onReenviado?: () => void }> = ({ file, candidatoId, onReenviado }) => {
-  const [reenviando, setReenviando] = useState(false);
-  const [sucesso, setSucesso] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    setReenviando(true);
-    setSucesso(false);
-    const ok = await reenviarDocumento(e.target.files[0], candidatoId, file.fileName);
-    setReenviando(false);
-    setSucesso(ok);
-    if (ok && onReenviado) onReenviado();
-  };
-
-  return (
-    <div className="document-card resultado-card rejeitado">
-      <div className="document-info">
-        <div className="document-title">
-          <span className="file-icon">📎</span>
-          <span className="doc-name">{file.fileName}</span>
-        </div>
-      </div>
-      <div className="document-actions">
-        <span className="badge badge-rejeitado">Rejeitado</span>
-        <button
-          className="reenviar-btn"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={reenviando}
-          style={{ marginLeft: 12 }}
-        >
-          {reenviando ? 'Enviando...' : 'Reenviar'}
-        </button>
-        <input
-          type="file"
-          accept="image/*,application/pdf"
-          style={{ display: 'none' }}
-          ref={fileInputRef}
-          onChange={handleFileChange}
-        />
-        {sucesso && <span className="reenviar-sucesso">Enviado!</span>}
-      </div>
-    </div>
-  );
-};
-// Função auxiliar para upload de arquivo reprovado
-async function reenviarDocumento(file: File, candidatoId: string, fileName: string) {
-  const formData = new FormData();
-  formData.append('files', file, fileName);
-  formData.append('candidato_id', candidatoId);
-  // Ajuste a URL se necessário
-  const res = await fetch('http://localhost:5003/processar_documentos', {
-    method: 'POST',
-    body: formData,
-  });
-  return res.ok;
-}
+import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "../../../supabaseClient";
 import "./resultado.scss";
 
+// Tipos
 interface FileEntry {
   fileName: string;
   publicUrl: string;
-  status?: string;
+  status?: "aceito" | "recusado"; 
+  motivoRecusa?: string;
+  dados_extraidos?: Record<string, string>; // Novo campo para armazenar os dados
 }
 
 interface ResultadoProps {
-  batchId: string | null;
   candidatoId: string;
-  onStepChange?: (step: number) => void;
+  batchId: string | null;
 }
 
-const Resultado: React.FC<ResultadoProps> = ({ batchId, candidatoId, onStepChange }) => {
+interface DocumentoBackend {
+  arquivo: string;
+  qualidade: string;
+  categoria: string;
+  dados_extraidos: any;
+}
+
+const Resultado: React.FC<ResultadoProps> = ({ candidatoId }) => {
   const [files, setFiles] = useState<FileEntry[]>([]);
-  const [dadosExtraidos, setDadosExtraidos] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [analiseStatus, setAnaliseStatus] = useState<'analise'|'concluido'|'erro'>('analise');
-  const pollingRef = useRef<NodeJS.Timeout|null>(null);
-  const [showedStep, setShowedStep] = useState(false);
+  const [reenviando, setReenviando] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Função para buscar o resultado da análise do backend (polling)
-    const fetchResultadoLote = async () => {
-      setLoading(true);
-      try {
-        if (!batchId) return;
-        const res = await fetch(`http://localhost:5003/resultado_lote/${batchId}`);
-        if (res.ok) {
-          const data = await res.json();
-          console.log('DEBUG resultado_lote:', data); // <-- LOG DE DEBUG
-          if (data.status === 'concluido') {
-            setAnaliseStatus('concluido');
-            const filesBackend: FileEntry[] = (data.documentos || []).map((doc: any) => ({
-              fileName: doc.arquivo,
-              publicUrl: '',
-              status: doc.qualidade && doc.qualidade.toLowerCase().includes('aprovado') ? 'aceito' : 'recusado',
-            }));
-            setFiles(filesBackend);
-            // Coletar dados extraídos dos documentos aprovados
-            const extraidos = (data.documentos || [])
-              .filter((doc: any) => doc.qualidade && doc.qualidade.toLowerCase().includes('aprovado') && doc.dados_extraidos)
-              .map((doc: any) => doc.dados_extraidos ? JSON.parse(doc.dados_extraidos) : {});
-            setDadosExtraidos(extraidos);
-            setLoading(false);
-            if (extraidos.length > 0) setShowModal(true);
-            if (pollingRef.current) clearTimeout(pollingRef.current);
-            return;
-          } else {
-            setAnaliseStatus('analise');
-          }
-        } else {
-          setAnaliseStatus('erro');
+  // Estados para o Modal de Edição
+  const [editingDoc, setEditingDoc] = useState<FileEntry | null>(null);
+  const [editFormData, setEditFormData] = useState<Record<string, string>>({});
+  const [savingData, setSavingData] = useState(false);
+
+  const fetchFilesAndStatus = useCallback(async () => {
+    if (!candidatoId) return;
+    setLoading(true);
+    
+    // 1. Busca ficheiros do Storage (URLs)
+    const bucket = supabase.storage.from("documents");
+    const { data: docFolders } = await bucket.list(`candidato_${candidatoId}`, { limit: 100 });
+    let allFiles: FileEntry[] = [];
+    
+    if (docFolders) {
+      for (const docFolder of docFolders) {
+        const docPath = `candidato_${candidatoId}/${docFolder.name}`;
+        const { data: items } = await bucket.list(docPath, { limit: 100 });
+        if (!items) continue;
+        for (const item of items) {
+          const filePath = `${docPath}/${item.name}`;
+          const { data } = bucket.getPublicUrl(filePath);
+          allFiles.push({
+            fileName: item.name,
+            publicUrl: data.publicUrl,
+          });
         }
-      } catch {
-        setAnaliseStatus('erro');
       }
-      setLoading(true);
-      pollingRef.current = setTimeout(fetchResultadoLote, 3000);
-    };
-    if (batchId) {
-      fetchResultadoLote();
     }
-    return () => {
-      if (pollingRef.current) clearTimeout(pollingRef.current);
-    };
-  }, [batchId]);
 
-  // Avança para etapa Resultado (5) quando análise concluir
-  useEffect(() => {
-    if (analiseStatus === 'concluido' && onStepChange && !showedStep) {
-      onStepChange(5);
-      setShowedStep(true);
+    // 2. Busca TODOS os dados extraídos do backend (para preencher o modal)
+    let dadosDoBackend: DocumentoBackend[] = [];
+    try {
+        const res = await fetch(`http://localhost:5003/candidato/${candidatoId}/todos_documentos`);
+        if (res.ok) {
+            const json = await res.json();
+            dadosDoBackend = json.documentos || [];
+        }
+    } catch (e) { console.error(e); }
+
+    // 3. Busca status do funcionário (se houver)
+    const { data: statusData } = await supabase
+      .from('document_status') 
+      .select('file_path, status, justificativa')
+      .eq('candidato_id', candidatoId);
+
+    const statusMap = new Map<string, { status: "aceito" | "recusado", motivo: string }>();
+    if (statusData) {
+      for (const row of statusData) {
+        statusMap.set(row.file_path, { status: row.status, motivo: row.justificativa || "" });
+      }
     }
-  }, [analiseStatus, onStepChange, showedStep]);
+
+    // 4. Combina tudo
+    const filesWithData = allFiles.map(f => {
+      const docData = dadosDoBackend.find(d => d.arquivo === f.fileName);
+      const dbStatus = statusMap.get(f.publicUrl);
+      
+      let finalStatus = undefined;
+      let finalMotivo = undefined;
+
+      if (dbStatus) {
+        finalStatus = dbStatus.status;
+        finalMotivo = dbStatus.motivo;
+      } else if (docData && docData.qualidade.includes("Reprovado")) {
+         finalStatus = "recusado";
+         finalMotivo = docData.qualidade;
+      }
+
+      return {
+        ...f,
+        status: finalStatus as "aceito" | "recusado" | undefined,
+        motivoRecusa: finalMotivo,
+        dados_extraidos: docData?.dados_extraidos || null
+      };
+    });
+
+    setFiles(filesWithData);
+    setLoading(false);
+  }, [candidatoId]);
+
+  useEffect(() => { fetchFilesAndStatus(); }, [fetchFilesAndStatus]);
+
+  // Função de Reenvio
+  const handleReenvio = (arquivo: string, file: File) => {
+    if (!candidatoId) return;
+    setReenviando(arquivo);
+    const formData = new FormData();
+    formData.append("files", file, arquivo); 
+    formData.append("candidato_id", candidatoId);
+    
+    fetch("http://localhost:5003/processar_documentos", { method: "POST", body: formData })
+    .then(res => res.json())
+    .then(data => {
+        setReenviando(null);
+        if (data.status === "processamento_iniciado") {
+            alert("Reenviado! Atualize a página em alguns instantes.");
+            setFiles((prev) => prev.filter((d) => d.fileName !== arquivo));
+        } else { alert("Erro: " + data.erro); }
+    })
+    .catch(() => { setReenviando(null); alert("Erro de rede."); });
+  };
+
+  // Funções do Modal de Edição
+  const openEditModal = (doc: FileEntry) => {
+    if (!doc.dados_extraidos) {
+        alert("Não há dados extraídos para este documento.");
+        return;
+    }
+    setEditingDoc(doc);
+    setEditFormData({ ...doc.dados_extraidos });
+  };
+
+  const handleInputChange = (key: string, value: string) => {
+    setEditFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  const saveEditedData = async () => {
+    if (!editingDoc || !candidatoId) return;
+    setSavingData(true);
+    try {
+        const res = await fetch("http://localhost:5003/documento/dados", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                candidato_id: candidatoId,
+                arquivo: editingDoc.fileName,
+                dados: editFormData
+            })
+        });
+        const json = await res.json();
+        if (json.status === "sucesso") {
+            alert("Dados atualizados e confirmados!");
+            setEditingDoc(null); // Fecha modal
+            fetchFilesAndStatus(); // Recarrega
+        } else {
+            alert("Erro ao salvar: " + json.erro);
+        }
+    } catch (e) { alert("Erro de rede."); }
+    setSavingData(false);
+  };
 
   const aceitos = files.filter(f => f.status === "aceito");
   const rejeitados = files.filter(f => f.status === "recusado");
-  const aprovado = files.length > 0 && rejeitados.length === 0;
+  const pendentes = files.filter(f => !f.status);
 
   return (
     <div className="resultado-container">
       <h2>Resultado da Análise</h2>
-      {analiseStatus === 'analise' && (
-        <div className="loading">Analisando documentos... Aguarde.</div>
-      )}
-      {analiseStatus === 'erro' && (
-        <div className="loading">Erro ao buscar resultado. Tente novamente mais tarde.</div>
-      )}
-      {analiseStatus === 'concluido' && !loading && (
-        <>
-          <div className="resultado-summary">
-            {aprovado ? (
-              <div className="aprovado-msg">✅ Todos os documentos foram aprovados! Seu cadastro foi aprovado.</div>
-            ) : (
-              <div className="reprovado-msg">❌ Um ou mais documentos foram reprovados. Reenvie os documentos rejeitados abaixo.</div>
-            )}
-          </div>
-          {aprovado && showModal && (
-            <Modal onClose={() => setShowModal(false)}>
-              <h2>Dados extraídos dos documentos</h2>
-              {dadosExtraidos.map((dados, idx) => (
-                <div key={idx} style={{marginBottom: '1rem', background: '#f7f7f7', padding: '1rem', borderRadius: 8}}>
-                  {Object.entries(dados).map(([key, val]) => (
-                    <div key={key}><strong>{key}:</strong> {val}</div>
-                  ))}
+      {loading ? <div className="loading">Carregando...</div> : (
+        <div className="document-list">
+          
+          {/* MODAL DE EDIÇÃO */}
+          {editingDoc && (
+            <div className="modal-overlay">
+                <div className="modal-content edit-modal">
+                    <div className="modal-header">
+                        <h3>Conferir Dados: {editingDoc.fileName}</h3>
+                        <button className="close-btn" onClick={() => setEditingDoc(null)}>×</button>
+                    </div>
+                    <div className="modal-body">
+                        <p className="info-text">Verifique se os dados extraídos pela IA estão corretos. Edite se necessário.</p>
+                        <div className="fields-grid">
+                            {Object.entries(editFormData).map(([key, value]) => (
+                                <div key={key} className="field-group">
+                                    <label>{key}</label>
+                                    <input 
+                                        type="text" 
+                                        value={value} 
+                                        onChange={(e) => handleInputChange(key, e.target.value)}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button className="cancel-btn" onClick={() => setEditingDoc(null)}>Cancelar</button>
+                        <button className="save-btn" onClick={saveEditedData} disabled={savingData}>
+                            {savingData ? "Salvando..." : "Confirmar e Salvar"}
+                        </button>
+                    </div>
                 </div>
-              ))}
-            </Modal>
+            </div>
           )}
-          <div className="document-list">
-            <div className="resultado-bloco">
-              <h3>Documentos Aceitos</h3>
-              {aceitos.length === 0 ? (
-                <p className="resultado-vazio">Nenhum documento aceito.</p>
-              ) : (
-                aceitos.map(f => (
-                  <div className="document-card resultado-card aceito" key={f.fileName}>
-                    <div className="document-info">
-                      <div className="document-title">
-                        <span className="file-icon">📎</span>
+
+          {/* CARTÕES */}
+          {[...rejeitados, ...pendentes, ...aceitos].map(f => (
+             <div className={`document-card resultado-card ${f.status || 'pendente'}`} key={f.fileName}>
+                <div className="document-info">
+                    <div className="document-title">
+                        <span className="file-icon">📄</span>
                         <span className="doc-name">{f.fileName}</span>
-                      </div>
                     </div>
-                    <div className="document-actions">
-                      <span className="badge badge-aceito">Aceito</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="resultado-bloco">
-              <h3>Documentos Rejeitados</h3>
-              {rejeitados.length === 0 ? (
-                <p className="resultado-vazio">Nenhum documento rejeitado.</p>
-              ) : (
-                rejeitados.map(f => (
-                  <RejeitadoCard key={f.fileName} file={f} candidatoId={candidatoId} onReenviado={() => window.location.reload()} />
-                ))
-              )}
-            </div>
-          </div>
-        </>
+                    {f.motivoRecusa && <div className="justificativa">Motivo: {f.motivoRecusa}</div>}
+                </div>
+                <div className="document-actions">
+                    <a href={f.publicUrl} target="_blank" rel="noopener noreferrer" className="visualizar-link">Visualizar</a>
+                    
+                    {/* Botão Conferir Dados (Só aparece se houver dados extraídos) */}
+                    {f.dados_extraidos && (
+                        <button className="conferir-btn" onClick={() => openEditModal(f)}>
+                            Conferir Dados
+                        </button>
+                    )}
+
+                    {/* Status Badge */}
+                    {f.status === 'aceito' && <span className="badge badge-aceito">Aceito</span>}
+                    {f.status === 'recusado' && (
+                        <div className="reenvio-wrapper">
+                            <span className="badge badge-rejeitado">Rejeitado</span>
+                            <label className="reenvio-label">
+                                {reenviando === f.fileName ? "Enviando..." : "Reenviar"}
+                                <input type="file" hidden onChange={e => e.target.files?.[0] && handleReenvio(f.fileName, e.target.files[0])} disabled={!!reenviando} />
+                            </label>
+                        </div>
+                    )}
+                    {!f.status && <span className="badge badge-pendente">Em Análise</span>}
+                </div>
+             </div>
+          ))}
+          
+          {files.length === 0 && <p className="vazio">Nenhum documento encontrado.</p>}
+        </div>
       )}
     </div>
   );
-}
+};
 
 export default Resultado;
-
