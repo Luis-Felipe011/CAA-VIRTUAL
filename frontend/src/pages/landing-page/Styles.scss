@@ -75,11 +75,16 @@
         }
 
         .image-block {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
             img {
-                width: 223%;
-                max-width: 900px;
-                margin-left: 198px;
-
+                width: 100%;
+                max-width: 600px;
+                margin-left: 0;
+                object-fit: contain;
+                display: block;
             }
         }
     }

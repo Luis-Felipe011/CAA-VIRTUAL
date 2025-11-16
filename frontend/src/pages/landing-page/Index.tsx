@@ -18,8 +18,7 @@ const LandingPage = () => {
           <img src={logo} alt="" />
         </div>
         <div className="nav">
-          <Button onClick={() => navigate('/login/candidato')} text='Sou Candidato'/>
-          <Button onClick={() => navigate('/login/funcionario')} text="Sou Atendente" color="outline"/>
+          <Button onClick={() => navigate('/login/candidato')} text='Login'/>
         </div>
       </header>
 
