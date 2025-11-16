@@ -4,12 +4,14 @@ import './register.scss'
 import SilviaIAIndex from '/images/SilviaIAIndex.png'
 import iconePuc from '/icons/iconePuc.png'
 import { supabase } from '../../supabaseClient'
+import { useToast } from '../../context/ToastContext' // <--- Importar
 
 export function Register() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const navigate = useNavigate()
+  const { showToast } = useToast() // <--- Hook
 
   const handleRegister = async () => {
     if (!email.trim() || !senha.trim()) {
@@ -24,11 +26,18 @@ export function Register() {
 
     if (error) {
       setErro(error.message);
+      // Também mostra um toast de erro para garantir visibilidade
+      showToast(error.message, 'error');
       return;
     }
 
-    alert('Conta criada! Verifique seu e-mail para confirmar o cadastro.');
-    navigate('/'); // volta para a tela de login
+    // UX Melhorada: Feedback visual positivo antes de navegar
+    showToast('Conta criada com sucesso! Verifique seu e-mail.', 'success');
+    
+    // Pequeno delay para o usuário ler a mensagem
+    setTimeout(() => {
+        navigate('/'); 
+    }, 2000);
   };
 
   return (

@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react"
-import { supabase } from "../../../../../frontend/src/supabaseClient"
-import Modal, { ModalHandle } from "../../Modal/Modal"
+import { supabase } from "../../../supabaseClient"
 import Input from "../../Input/Input"
 import Button from "../../Button/Button"
-import familypng from "../../../assets/img/family.png"
 import "./Infocandidate.scss"
+import { useToast } from "../../../context/ToastContext" // <--- Importar
 
 interface Props {
   setCandidatoId: (id: string) => void
   candidatoId: string | null
-  onStepChange?: (novoStep: number) => void; // Adicione a prop opcional
+  onStepChange?: (novoStep: number) => void;
 }
 
 export default function InfoCandidate({ onStepChange, setCandidatoId }: Props) {
@@ -17,9 +16,9 @@ export default function InfoCandidate({ onStepChange, setCandidatoId }: Props) {
   const [cpf, setCpf] = useState("")
   const [loading, setLoading] = useState(false)
   const [token, setToken] = useState<string | null>(null)
+  const { showToast } = useToast() // <--- Hook
 
   useEffect(() => {
-    // Busca o token JWT do usuário logado
     supabase.auth.getSession().then(({ data }) => {
       setToken(data.session?.access_token ?? null)
     })
@@ -27,7 +26,7 @@ export default function InfoCandidate({ onStepChange, setCandidatoId }: Props) {
 
   async function salvarCandidato() {
     if (!nomeCandidato.trim() || !cpf.trim()) {
-      alert("Preencha todos os campos.")
+      showToast("Preencha todos os campos.") // UX melhorada
       return
     }
     setLoading(true)
@@ -45,27 +44,21 @@ export default function InfoCandidate({ onStepChange, setCandidatoId }: Props) {
 
       if (json.success) {
         setCandidatoId(json.id);
-        alert("Candidato salvo com sucesso!");
+        showToast("Dados salvos com sucesso!", "success") // Feedback positivo
         if (onStepChange) onStepChange(2); 
       } else {
-        alert("Erro ao salvar candidato: " + json.error);
+        showToast("Erro ao salvar: " + json.error, "error")
       }
 
-      if (json.success) {
-        setCandidatoId(json.id)
-      } else {
-        alert("Erro ao salvar candidato: " + json.error)
-      }
     } catch (error) {
       console.error(error)
-      alert("Erro ao salvar candidato.")
+      showToast("Erro de conexão ao salvar candidato.", "error")
     }
     setLoading(false)
   }
 
   return (
     <>
-    
         <div className="infocandidate-form">
           <h2>Dados do candidato</h2>
           <div className="form-fields">
@@ -74,7 +67,6 @@ export default function InfoCandidate({ onStepChange, setCandidatoId }: Props) {
           </div>
           <Button text={loading ? "Salvando..." : "Confirmar candidato"} onClick={salvarCandidato} />
         </div>
-      
     </>
   )
 }

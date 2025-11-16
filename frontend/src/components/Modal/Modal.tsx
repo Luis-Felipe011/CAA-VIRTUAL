@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useState } from "react"
 import "./Modal.scss"
 import Input from "../Input/Input"
 import Button from "../Button/Button"
+import { useToast } from "../../context/ToastContext" // <--- Importar
 
 export interface ModalHandle {
   abrir: () => void
@@ -15,6 +16,7 @@ interface ModalProps {
 const Modal = forwardRef<ModalHandle, ModalProps>(({ candidatoId }, ref) => {
   const [aberto, setAberto] = useState(false)
   const [nome, setNome] = useState("")
+  const { showToast } = useToast() // <--- Hook
 
   useImperativeHandle(ref, () => ({
     abrir: () => setAberto(true),
@@ -23,7 +25,7 @@ const Modal = forwardRef<ModalHandle, ModalProps>(({ candidatoId }, ref) => {
 
   async function setFamilyDatabase() {
     if (!nome.trim()) {
-      alert("Digite um nome válido.")
+      showToast("Digite um nome válido.")
       return
     }
 
@@ -37,15 +39,15 @@ const Modal = forwardRef<ModalHandle, ModalProps>(({ candidatoId }, ref) => {
       const json = await resposta.json()
 
       if (json.success) {
-        alert("Familiar salvo com sucesso!")
+        showToast("Familiar salvo com sucesso!", "success")
         setNome("")
         setAberto(false)
       } else {
-        alert("Erro: " + json.error)
+        showToast("Erro: " + json.error, "error")
       }
     } catch (error) {
       console.error("Erro ao salvar:", error)
-      alert("Erro ao salvar familiar.")
+      showToast("Erro ao salvar familiar.", "error")
     }
   }
 

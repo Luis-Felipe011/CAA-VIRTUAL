@@ -1,14 +1,21 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { supabase } from "../../../supabaseClient";
+import { useToast } from "../../../context/ToastContext"; // Importa o Toast
 import "./resultado.scss";
 
-// Tipos
-interface FileEntry {
-  fileName: string;
-  publicUrl: string;
-  status?: "aceito" | "recusado"; 
+// Interface para o documento vindo do backend Python
+interface DocumentoBackend {
+  id: number; // ID único do banco (Primary Key)
+  arquivo: string;
+  qualidade: string;
+  categoria: string;
+  dados_extraidos: any;
+}
+
+// Interface estendida para uso no componente
+interface FileEntry extends DocumentoBackend {
+  publicUrl?: string; 
+  status?: "aceito" | "recusado";
   motivoRecusa?: string;
-  dados_extraidos?: Record<string, string>; // Novo campo para armazenar os dados
 }
 
 interface ResultadoProps {
@@ -16,129 +23,78 @@ interface ResultadoProps {
   batchId: string | null;
 }
 
-interface DocumentoBackend {
-  arquivo: string;
-  qualidade: string;
-  categoria: string;
-  dados_extraidos: any;
-}
-
 const Resultado: React.FC<ResultadoProps> = ({ candidatoId }) => {
-  const [files, setFiles] = useState<FileEntry[]>([]);
+  const [documentos, setDocumentos] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reenviando, setReenviando] = useState<string | null>(null);
-
+  
   // Estados para o Modal de Edição
-  const [editingDoc, setEditingDoc] = useState<FileEntry | null>(null);
+  const [editingDoc, setEditingDoc] = useState<DocumentoBackend | null>(null);
   const [editFormData, setEditFormData] = useState<Record<string, string>>({});
   const [savingData, setSavingData] = useState(false);
 
-  const fetchFilesAndStatus = useCallback(async () => {
-    if (!candidatoId) return;
-    setLoading(true);
-    
-    // 1. Busca ficheiros do Storage (URLs)
-    const bucket = supabase.storage.from("documents");
-    const { data: docFolders } = await bucket.list(`candidato_${candidatoId}`, { limit: 100 });
-    let allFiles: FileEntry[] = [];
-    
-    if (docFolders) {
-      for (const docFolder of docFolders) {
-        const docPath = `candidato_${candidatoId}/${docFolder.name}`;
-        const { data: items } = await bucket.list(docPath, { limit: 100 });
-        if (!items) continue;
-        for (const item of items) {
-          const filePath = `${docPath}/${item.name}`;
-          const { data } = bucket.getPublicUrl(filePath);
-          allFiles.push({
-            fileName: item.name,
-            publicUrl: data.publicUrl,
-          });
-        }
-      }
-    }
+  const [reenviando, setReenviando] = useState<string | null>(null);
+  
+  const { showToast } = useToast(); // Hook de notificação
 
-    // 2. Busca TODOS os dados extraídos do backend (para preencher o modal)
-    let dadosDoBackend: DocumentoBackend[] = [];
+  const fetchResultados = useCallback(async () => {
+    // Permite buscar mesmo sem candidatoId estrito para facilitar testes (fallback)
+    setLoading(true);
+
     try {
-        const res = await fetch(`http://localhost:5003/candidato/${candidatoId}/todos_documentos`);
+        // 1. Busca dados do Python (Backend Local)
+        // Usa 'teste' como fallback se candidatoId for nulo
+        const res = await fetch(`http://localhost:5003/candidato/${candidatoId || 'teste'}/todos_documentos`);
+        let docsBackend: DocumentoBackend[] = [];
+        
         if (res.ok) {
             const json = await res.json();
-            dadosDoBackend = json.documentos || [];
+            docsBackend = json.documentos || [];
+        } else {
+             console.warn("Falha ao buscar documentos do backend.");
         }
-    } catch (e) { console.error(e); }
 
-    // 3. Busca status do funcionário (se houver)
-    const { data: statusData } = await supabase
-      .from('document_status') 
-      .select('file_path, status, justificativa')
-      .eq('candidato_id', candidatoId);
+        // 2. Processa os documentos para exibição
+        const docsProcessados = docsBackend.map((doc) => {
+            // Tenta pegar URL do supabase se existir (opcional, pois removemos o botão visualizar)
+            // const { data } = supabase.storage.from("documents").getPublicUrl(`candidato_${candidatoId}/${doc.arquivo}`);
+            
+            return {
+                ...doc,
+                // publicUrl: data.publicUrl, 
+                // Define status baseado na qualidade ('Aprovado' = aceito)
+                status: doc.qualidade.includes("Aprovado") ? "aceito" : "recusado",
+                motivoRecusa: doc.qualidade.includes("Aprovado") ? "" : doc.qualidade
+            } as FileEntry;
+        });
 
-    const statusMap = new Map<string, { status: "aceito" | "recusado", motivo: string }>();
-    if (statusData) {
-      for (const row of statusData) {
-        statusMap.set(row.file_path, { status: row.status, motivo: row.justificativa || "" });
-      }
+        setDocumentos(docsProcessados);
+
+    } catch (e) {
+        console.error("Erro crítico ao buscar documentos:", e);
+        showToast("Erro ao carregar documentos.", "error");
+    } finally {
+        setLoading(false);
     }
+  }, [candidatoId, showToast]);
 
-    // 4. Combina tudo
-    const filesWithData = allFiles.map(f => {
-      const docData = dadosDoBackend.find(d => d.arquivo === f.fileName);
-      const dbStatus = statusMap.get(f.publicUrl);
-      
-      let finalStatus = undefined;
-      let finalMotivo = undefined;
+  useEffect(() => {
+    fetchResultados();
+  }, [fetchResultados]);
 
-      if (dbStatus) {
-        finalStatus = dbStatus.status;
-        finalMotivo = dbStatus.motivo;
-      } else if (docData && docData.qualidade.includes("Reprovado")) {
-         finalStatus = "recusado";
-         finalMotivo = docData.qualidade;
-      }
-
-      return {
-        ...f,
-        status: finalStatus as "aceito" | "recusado" | undefined,
-        motivoRecusa: finalMotivo,
-        dados_extraidos: docData?.dados_extraidos || null
-      };
-    });
-
-    setFiles(filesWithData);
-    setLoading(false);
-  }, [candidatoId]);
-
-  useEffect(() => { fetchFilesAndStatus(); }, [fetchFilesAndStatus]);
-
-  // Função de Reenvio
-  const handleReenvio = (arquivo: string, file: File) => {
-    if (!candidatoId) return;
-    setReenviando(arquivo);
-    const formData = new FormData();
-    formData.append("files", file, arquivo); 
-    formData.append("candidato_id", candidatoId);
-    
-    fetch("http://localhost:5003/processar_documentos", { method: "POST", body: formData })
-    .then(res => res.json())
-    .then(data => {
-        setReenviando(null);
-        if (data.status === "processamento_iniciado") {
-            alert("Reenviado! Atualize a página em alguns instantes.");
-            setFiles((prev) => prev.filter((d) => d.fileName !== arquivo));
-        } else { alert("Erro: " + data.erro); }
-    })
-    .catch(() => { setReenviando(null); alert("Erro de rede."); });
-  };
-
-  // Funções do Modal de Edição
-  const openEditModal = (doc: FileEntry) => {
+  // --- FUNÇÕES DE EDIÇÃO ---
+  const openEditModal = (doc: DocumentoBackend) => {
     if (!doc.dados_extraidos) {
-        alert("Não há dados extraídos para este documento.");
+        showToast("Não há dados extraídos para este documento.", "info");
         return;
     }
     setEditingDoc(doc);
-    setEditFormData({ ...doc.dados_extraidos });
+    
+    // Parser seguro para garantir que temos um objeto editável
+    let dados = doc.dados_extraidos;
+    if (typeof dados === 'string') {
+        try { dados = JSON.parse(dados); } catch { dados = {}; }
+    }
+    setEditFormData(dados || {});
   };
 
   const handleInputChange = (key: string, value: string) => {
@@ -146,110 +102,174 @@ const Resultado: React.FC<ResultadoProps> = ({ candidatoId }) => {
   };
 
   const saveEditedData = async () => {
-    if (!editingDoc || !candidatoId) return;
+    if (!editingDoc) return;
     setSavingData(true);
     try {
+        // Envia o 'documento_id' para o backend atualizar o registro correto
         const res = await fetch("http://localhost:5003/documento/dados", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                candidato_id: candidatoId,
-                arquivo: editingDoc.fileName,
+                documento_id: editingDoc.id, 
                 dados: editFormData
             })
         });
+        
         const json = await res.json();
-        if (json.status === "sucesso") {
-            alert("Dados atualizados e confirmados!");
-            setEditingDoc(null); // Fecha modal
-            fetchFilesAndStatus(); // Recarrega
+        
+        if (res.ok && json.status === "sucesso") {
+            showToast("Dados atualizados com sucesso!", "success");
+            setEditingDoc(null);
+            fetchResultados(); // Recarrega a lista para refletir a mudança
         } else {
-            alert("Erro ao salvar: " + json.erro);
+            showToast(`Erro ao salvar: ${json.erro || "Desconhecido"}`, "error");
         }
-    } catch (e) { alert("Erro de rede."); }
+    } catch (e) { 
+        showToast("Erro de conexão com o servidor.", "error");
+    }
     setSavingData(false);
   };
 
-  const aceitos = files.filter(f => f.status === "aceito");
-  const rejeitados = files.filter(f => f.status === "recusado");
-  const pendentes = files.filter(f => !f.status);
+  // --- FUNÇÃO DE REENVIO ---
+  const handleReenvio = (arquivo: string, file: File) => {
+    if (!candidatoId) return;
+    setReenviando(arquivo);
+    
+    const formData = new FormData();
+    // Envia o arquivo com o nome original para substituir o antigo
+    formData.append("files", file, arquivo); 
+    formData.append("candidato_id", candidatoId);
+    
+    fetch("http://localhost:5003/processar_documentos", { 
+        method: "POST", 
+        body: formData 
+    })
+    .then(res => res.json())
+    .then(data => {
+        setReenviando(null);
+        if (data.status === "processamento_iniciado") {
+            showToast("Arquivo reenviado! A IA está analisando novamente.", "success");
+            // Opcional: Remover da lista visualmente enquanto processa
+            // setDocumentos((prev) => prev.filter((d) => d.arquivo !== arquivo));
+        } else { 
+            showToast(`Erro no envio: ${data.erro}`, "error"); 
+        }
+    })
+    .catch(() => { 
+        setReenviando(null); 
+        showToast("Erro de rede ao reenviar.", "error"); 
+    });
+  };
 
   return (
     <div className="resultado-container">
       <h2>Resultado da Análise</h2>
-      {loading ? <div className="loading">Carregando...</div> : (
+      
+      {loading ? (
+        <div className="loading-container">
+             <div className="spinner"></div> 
+             <p>Carregando resultados...</p>
+        </div>
+      ) : (
         <div className="document-list">
           
-          {/* MODAL DE EDIÇÃO */}
+          {/* --- MODAL DE EDIÇÃO (COM NOVO VISUAL) --- */}
           {editingDoc && (
             <div className="modal-overlay">
-                <div className="modal-content edit-modal">
+                <div className="edit-modal">
                     <div className="modal-header">
-                        <h3>Conferir Dados: {editingDoc.fileName}</h3>
+                        <h3>Dados Extraídos: {editingDoc.arquivo}</h3>
                         <button className="close-btn" onClick={() => setEditingDoc(null)}>×</button>
                     </div>
+                    
                     <div className="modal-body">
-                        <p className="info-text">Verifique se os dados extraídos pela IA estão corretos. Edite se necessário.</p>
+                        <div className="info-text">
+                            Confirme se os dados abaixo conferem com o documento original. 
+                            Você pode corrigir qualquer erro encontrado.
+                        </div>
+                        
                         <div className="fields-grid">
                             {Object.entries(editFormData).map(([key, value]) => (
                                 <div key={key} className="field-group">
                                     <label>{key}</label>
                                     <input 
                                         type="text" 
-                                        value={value} 
+                                        value={String(value)} 
                                         onChange={(e) => handleInputChange(key, e.target.value)}
                                     />
                                 </div>
                             ))}
                         </div>
                     </div>
+                    
                     <div className="modal-footer">
-                        <button className="cancel-btn" onClick={() => setEditingDoc(null)}>Cancelar</button>
-                        <button className="save-btn" onClick={saveEditedData} disabled={savingData}>
-                            {savingData ? "Salvando..." : "Confirmar e Salvar"}
+                        <button className="cancel-btn" onClick={() => setEditingDoc(null)}>
+                            Cancelar
+                        </button>
+                        <button 
+                            className="save-btn" 
+                            onClick={saveEditedData} 
+                            disabled={savingData}
+                        >
+                            {savingData ? "Salvando..." : "Confirmar Alterações"}
                         </button>
                     </div>
                 </div>
             </div>
           )}
 
-          {/* CARTÕES */}
-          {[...rejeitados, ...pendentes, ...aceitos].map(f => (
-             <div className={`document-card resultado-card ${f.status || 'pendente'}`} key={f.fileName}>
-                <div className="document-info">
-                    <div className="document-title">
-                        <span className="file-icon">📄</span>
-                        <span className="doc-name">{f.fileName}</span>
-                    </div>
-                    {f.motivoRecusa && <div className="justificativa">Motivo: {f.motivoRecusa}</div>}
-                </div>
-                <div className="document-actions">
-                    <a href={f.publicUrl} target="_blank" rel="noopener noreferrer" className="visualizar-link">Visualizar</a>
-                    
-                    {/* Botão Conferir Dados (Só aparece se houver dados extraídos) */}
-                    {f.dados_extraidos && (
-                        <button className="conferir-btn" onClick={() => openEditModal(f)}>
-                            Conferir Dados
-                        </button>
-                    )}
-
-                    {/* Status Badge */}
-                    {f.status === 'aceito' && <span className="badge badge-aceito">Aceito</span>}
-                    {f.status === 'recusado' && (
-                        <div className="reenvio-wrapper">
-                            <span className="badge badge-rejeitado">Rejeitado</span>
-                            <label className="reenvio-label">
-                                {reenviando === f.fileName ? "Enviando..." : "Reenviar"}
-                                <input type="file" hidden onChange={e => e.target.files?.[0] && handleReenvio(f.fileName, e.target.files[0])} disabled={!!reenviando} />
-                            </label>
+          {/* --- LISTA DE DOCUMENTOS --- */}
+          {documentos.length === 0 ? (
+              <p className="vazio">Nenhum documento encontrado para este candidato.</p>
+          ) : (
+              documentos.map(doc => (
+                <div className={`document-card resultado-card ${doc.status}`} key={doc.id}>
+                    <div className="document-info">
+                        <div className="document-title">
+                            <span className="file-icon">📄</span>
+                            <span className="doc-name">{doc.arquivo}</span>
                         </div>
-                    )}
-                    {!f.status && <span className="badge badge-pendente">Em Análise</span>}
+                        
+                        {doc.motivoRecusa ? (
+                            <div className="justificativa">
+                                Motivo: {doc.motivoRecusa}
+                            </div>
+                        ) : (
+                            <div className="categoria-info">
+                                Tipo: <strong>{doc.categoria}</strong>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="document-actions">
+                        {/* Botão Conferir Dados (Aparece para Aceitos com dados) */}
+                        {doc.dados_extraidos && doc.status === 'aceito' && (
+                            <button className="conferir-btn" onClick={() => openEditModal(doc)}>
+                                Conferir Dados
+                            </button>
+                        )}
+
+                        {/* Botão de Reenvio (Apenas para Recusados) */}
+                        {doc.status === 'recusado' && (
+                             <label className="reenvio-label">
+                                {reenviando === doc.arquivo ? "Enviando..." : "Corrigir / Reenviar"}
+                                <input 
+                                    type="file" 
+                                    hidden 
+                                    accept="image/*,.pdf"
+                                    onChange={e => e.target.files?.[0] && handleReenvio(doc.arquivo, e.target.files[0])} 
+                                    disabled={!!reenviando} 
+                                />
+                            </label>
+                        )}
+
+                        <span className={`badge badge-${doc.status}`}>
+                            {doc.status === 'aceito' ? 'Aprovado' : 'Atenção'}
+                        </span>
+                    </div>
                 </div>
-             </div>
-          ))}
-          
-          {files.length === 0 && <p className="vazio">Nenhum documento encontrado.</p>}
+              ))
+          )}
         </div>
       )}
     </div>

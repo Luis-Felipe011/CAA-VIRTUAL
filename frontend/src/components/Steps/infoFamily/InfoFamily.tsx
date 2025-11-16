@@ -3,6 +3,7 @@ import { supabase } from "../../../supabaseClient";
 import Input from "../../Input/Input";
 import Button from "../../Button/Button";
 import "./InfoFamily.scss";
+import { useToast } from "../../../context/ToastContext"; // <--- Importar
 
 interface Familiar {
   id: string;
@@ -12,7 +13,7 @@ interface Familiar {
 
 interface Props {
   candidatoId: string;
-   onStepChange?: (novoStep: number) => void; // Adicione a prop opcional
+  onStepChange?: (novoStep: number) => void;
 }
 
 export default function InfoFamily({ onStepChange, candidatoId }: Props) {
@@ -21,24 +22,26 @@ export default function InfoFamily({ onStepChange, candidatoId }: Props) {
   const [loading, setLoading] = useState(false);
   const [familiares, setFamiliares] = useState<Familiar[]>([]);
   const [token, setToken] = useState<string | null>(null);
+  const { showToast } = useToast(); // <--- Hook
 
-  // Busca o token ao montar
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setToken(data.session?.access_token ?? null);
     });
   }, []);
 
-const buscarFamiliares = async () => {
-  if (!candidatoId) return;
-  const resposta = await fetch(`http://localhost:5000/api/familiares?candidato_id=${candidatoId}`, {
-    headers: {
-      "Authorization": `Bearer ${token}`,
-    },
-  });
-  const json = await resposta.json();
-  if (json.success) setFamiliares(json.familiares);
-};
+  const buscarFamiliares = async () => {
+    if (!candidatoId) return;
+    try {
+        const resposta = await fetch(`http://localhost:5000/api/familiares?candidato_id=${candidatoId}`, {
+            headers: { "Authorization": `Bearer ${token}` },
+        });
+        const json = await resposta.json();
+        if (json.success) setFamiliares(json.familiares);
+    } catch (e) {
+        console.error("Erro ao buscar familiares", e);
+    }
+  };
 
   useEffect(() => {
     if (candidatoId) {
@@ -48,7 +51,7 @@ const buscarFamiliares = async () => {
 
   async function salvarFamiliar() {
     if (!nomeFamiliar.trim() || !cpf.trim()) {
-      alert("Preencha todos os campos.");
+      showToast("Preencha nome e CPF do familiar.");
       return;
     }
     setLoading(true);
@@ -72,13 +75,13 @@ const buscarFamiliares = async () => {
         setNomeFamiliar("");
         setCpf("");
         buscarFamiliares(); 
-        alert("Familiar salvo com sucesso!");
+        showToast("Membro familiar adicionado!", "success");
       } else {
-        alert("Erro ao salvar familiar: " + json.error);
+        showToast("Erro ao salvar: " + json.error, "error");
       }
     } catch (error) {
       console.error(error);
-      alert("Erro ao salvar familiar.");
+      showToast("Erro de conexão.", "error");
     }
     setLoading(false);
   }
@@ -121,7 +124,8 @@ const buscarFamiliares = async () => {
 
       <div className="confirmar-nucleo-btn">
         <Button
-          text="Confirmar núcleo familiar"
+          text="Confirmar núcleo familiar e Avançar"
+          color="primary" // Destaca o botão de avançar
           onClick={async () => {
             setLoading(true);
             try {
@@ -135,13 +139,13 @@ const buscarFamiliares = async () => {
               });
               const json = await resposta.json();
               if (json.success) {
-                alert("Núcleo familiar confirmado! Avançando para próxima etapa.");
-                 if (onStepChange) onStepChange(3); // Atualiza o step na Home
+                showToast("Núcleo familiar confirmado!", "success");
+                if (onStepChange) onStepChange(3);
               } else {
-                alert("Erro ao avançar etapa: " + json.error);
+                showToast("Erro ao avançar etapa: " + json.error, "error");
               }
             } catch (error) {
-              alert("Erro ao avançar etapa.");
+              showToast("Erro ao avançar etapa.", "error");
             }
             setLoading(false);
           }}

@@ -5,19 +5,14 @@ import { Home } from './pages/candidates/Home/home';
 import './styles/global.scss';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Register } from './pages/Register/register';
-import  LandingPage  from './pages/landing-page/Index';
-// import { useState } from 'react';
-// import { getCurrentUserId } from './services/Auth';
+import LandingPage from './pages/landing-page/Index';
+import { ToastProvider } from './context/ToastContext'; // <--- IMPORTANTE
 
 export default function App() {
-  
-  // const user = getCurrentUserId();
-  // const [isLoggedIn, setIsLoggedIn] = useState(user !== null);
-  
-    return (
+  return (
+    <ToastProvider> {/* <--- ENVOLVE TUDO AQUI */}
       <Router>
         <Routes>
-          {/* <Route path="/" element={<SignIn />} /> */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login/funcionario" element={<SignInF />} />
           <Route path="/homeF" element={<HomeF />} />
@@ -26,7 +21,6 @@ export default function App() {
           <Route path="/register" element={<Register />} />
         </Routes>
       </Router>
-    )
-  
+    </ToastProvider>
+  );
 }
-

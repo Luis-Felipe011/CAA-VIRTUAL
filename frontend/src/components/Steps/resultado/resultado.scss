@@ -1,140 +1,343 @@
-// ... (mantenha os estilos anteriores) ...
+// frontend/src/components/Steps/resultado/resultado.scss
 
-.document-actions {
+.resultado-container {
+  max-height: 80vh;
+  overflow-y: auto;
+  padding-bottom: 2rem;
+}
+
+.vazio {
+  text-align: center;
+  color: #666;
+  font-size: 1.1rem;
+  margin-top: 2rem;
+}
+
+.justificativa {
+  margin-top: 0.5rem;
+  color: #dc3545;
+  font-size: 0.9rem;
+  background: #fff0f0;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  border-left: 3px solid #dc3545;
+}
+
+.document-list {
   display: flex;
-  flex-direction: column; // Empilha os botões
-  align-items: flex-end;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 1.5rem;
+}
 
-  .visualizar-link {
-    font-size: 0.9rem;
-    color: #007bff;
-    text-decoration: none;
-    &:hover { text-decoration: underline; }
+.resultado-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 0.5rem;
+  border-left: 5px solid #007bff;
+  min-height: 4rem;
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
   }
 
-  .conferir-btn {
-    background-color: #6c757d; // Cinza neutro
-    color: white;
-    border: none;
-    padding: 0.4rem 0.8rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: background 0.2s;
-    &:hover { background-color: #5a6268; }
+  .document-info {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    
+    .document-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      
+      .file-icon {
+        font-size: 1.3rem;
+        color: #007bff;
+      }
+      .doc-name {
+        color: #333;
+      }
+    }
   }
 
-  .reenvio-label {
-    display: block;
-    margin-top: 4px;
-    background-color: #007bff;
-    color: white;
-    padding: 0.3rem 0.8rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    text-align: center;
-    &:hover { background-color: #0056b3; }
+  .document-actions {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 140px;
+
+    .visualizar-link {
+      font-size: 0.9rem;
+      color: #007bff;
+      text-decoration: none;
+      font-weight: 500;
+      margin-bottom: 0.2rem;
+      &:hover { text-decoration: underline; }
+    }
+
+    .conferir-btn {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-weight: 500;
+      
+      &:hover { background-color: #5a6268; }
+    }
+
+    .reenvio-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3rem;
+    }
+
+    .reenvio-label {
+      background-color: #007bff;
+      color: white;
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-align: center;
+      font-weight: 500;
+      transition: background 0.2s;
+      
+      &:hover { background-color: #0056b3; }
+      
+      // Estado desabilitado simulado
+      &[disabled] {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+    }
+
+    .badge {
+      font-size: 0.9rem;
+      padding: 0.4em 0.8em;
+      border-radius: 20px;
+      font-weight: 600;
+      display: inline-block;
+      text-align: center;
+      min-width: 100px;
+    }
+
+    .badge-aceito {
+      background: #28a745;
+      color: #fff;
+    }
+
+    .badge-rejeitado {
+      background: #dc3545;
+      color: #fff;
+    }
+
+    .badge-pendente {
+      background: #ffc107;
+      color: #333;
+    }
   }
 }
 
-// --- ESTILOS DO MODAL DE EDIÇÃO ---
+// Estilos condicionais do cartão
+.resultado-card.aceito {
+  background: #f0fff4;
+  border-left-color: #28a745;
+}
+
+.resultado-card.rejeitado {
+  background: #fff5f5;
+  border-left-color: #dc3545;
+}
+
+.resultado-card.pendente {
+  background: #fffbf0;
+  border-left-color: #ffc107;
+}
+
+
+// --- MODAL DE EDIÇÃO (ESTILO MODERNO) ---
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(23, 23, 32, 0.75); // Fundo mais escuro
+  backdrop-filter: blur(5px); // Efeito Glass
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
-  backdrop-filter: blur(3px);
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .edit-modal {
-  background: white;
+  background: #ffffff;
   width: 90%;
-  max-width: 500px;
-  border-radius: 12px;
-  padding: 0; // Padding interno controlado
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  max-width: 600px;
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  max-height: 90vh; // Evita que saia da tela
+  max-height: 85vh;
+  animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
 
   .modal-header {
-    padding: 1.2rem;
-    border-bottom: 1px solid #eee;
+    padding: 1.5rem 2rem;
+    background: #f8f9fc;
+    border-bottom: 1px solid #eef0f5;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    h3 { margin: 0; color: #333; font-size: 1.2rem; }
-    .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; }
+
+    h3 { 
+      margin: 0; 
+      color: #1a1a1a; 
+      font-size: 1.3rem; 
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+
+    .close-btn { 
+      background: transparent;
+      border: none; 
+      font-size: 2rem; 
+      cursor: pointer; 
+      color: #888; 
+      line-height: 1;
+      padding: 0;
+      
+      &:hover { color: #333; } 
+    }
   }
 
   .modal-body {
-    padding: 1.5rem;
-    overflow-y: auto; // Scroll se tiver muitos campos
+    padding: 2rem;
+    overflow-y: auto;
+    background: #fff;
     
     .info-text {
-      color: #666;
-      font-size: 0.9rem;
+      color: #555;
+      font-size: 0.95rem;
       margin-bottom: 1.5rem;
+      background: #e8f4fd;
+      border-left: 4px solid #1976d2;
+      padding: 1rem;
+      border-radius: 4px;
     }
 
     .fields-grid {
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      gap: 1.2rem;
 
       .field-group {
         display: flex;
         flex-direction: column;
+        gap: 0.5rem;
+
         label {
           font-size: 0.85rem;
-          font-weight: 600;
-          color: #555;
-          margin-bottom: 0.3rem;
-          text-transform: uppercase; // Deixa os rótulos mais profissionais
+          font-weight: 700;
+          color: #4a5568;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
         }
+        
         input {
-          padding: 0.6rem;
-          border: 1px solid #ccc;
-          border-radius: 6px;
+          padding: 0.8rem 1rem;
+          border: 2px solid #e2e8f0;
+          border-radius: 8px;
           font-size: 1rem;
-          &:focus { outline: none; border-color: #007bff; }
+          color: #2d3748;
+          transition: all 0.2s;
+          background: #fbfdff;
+
+          &:focus { 
+            outline: none; 
+            border-color: #007bff; 
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+          }
         }
       }
     }
   }
 
   .modal-footer {
-    padding: 1rem;
-    border-top: 1px solid #eee;
+    padding: 1.5rem 2rem;
+    background: #fff;
+    border-top: 1px solid #eef0f5;
     display: flex;
     justify-content: flex-end;
-    gap: 0.8rem;
+    gap: 1rem;
+
+    button {
+      font-family: inherit;
+      font-weight: 600;
+      transition: all 0.2s;
+      font-size: 1rem;
+    }
 
     .cancel-btn {
-      background: none;
-      border: 1px solid #ccc;
-      padding: 0.6rem 1.2rem;
-      border-radius: 6px;
+      background: transparent;
+      border: 1px solid #cbd5e0;
+      padding: 0.7rem 1.5rem;
+      border-radius: 8px;
       cursor: pointer;
-      color: #666;
-      &:hover { background: #f5f5f5; }
+      color: #4a5568;
+      
+      &:hover { 
+        background: #f7fafc; 
+        border-color: #a0aec0;
+      }
     }
 
     .save-btn {
-      background: #28a745; // Verde confirmação
+      background: linear-gradient(135deg, #007bff, #0056b3);
       border: none;
-      padding: 0.6rem 1.2rem;
-      border-radius: 6px;
+      padding: 0.7rem 2rem;
+      border-radius: 8px;
       color: white;
-      font-weight: 600;
       cursor: pointer;
-      &:hover { background: #218838; }
-      &:disabled { opacity: 0.6; cursor: not-allowed; }
+      box-shadow: 0 4px 6px rgba(0, 123, 255, 0.25);
+
+      &:hover { 
+        transform: translateY(-1px);
+        box-shadow: 0 6px 8px rgba(0, 123, 255, 0.35);
+      }
+      
+      &:active { transform: translateY(0); }
+
+      &:disabled { 
+        opacity: 0.7; 
+        cursor: not-allowed; 
+        transform: none;
+      }
     }
   }
 }
