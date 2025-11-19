@@ -1,6 +1,7 @@
 # --- 1. IMPORTAÇÕES PRIMEIRO ---
 from fastapi import FastAPI, UploadFile, File, Form, Request, Query, BackgroundTasks, Path
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles # <--- NOVO IMPORT
 from fastapi.responses import JSONResponse
 from typing import List
 import tempfile
@@ -23,15 +24,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- CONFIGURAÇÃO DE IMAGENS (NOVA) ---
+# Isso torna a pasta "documentos_processados" acessível via navegador
+# Exemplo: http://localhost:5003/imagens/lote_xyz/1.jpg
+os.makedirs("documentos_processados", exist_ok=True) # Garante que a pasta existe
+app.mount("/imagens", StaticFiles(directory="documentos_processados"), name="imagens")
+
 # --- 4. CONFIGURAR EVENTOS DE STARTUP ---
 @app.on_event("startup")
 def startup_event():
     print("Iniciando o servidor FastAPI...")
+    print("Carregando modelos de IA... Isso pode demorar.")
     analyzer.init_models()
     print("Modelos carregados. Servidor pronto na porta 5003.")
 
-# --- 5. ENDPOINTS ---
+# ... (MANTENHA O RESTO DOS ENDPOINTS IGUAIS: documentos_reprovados, processar_documentos, etc.) ...
 
+# --- A ÚNICA OUTRA MUDANÇA É NO get_resultado_lote e get_todos_documentos ---
+# (Mas na verdade, o frontend vai construir a URL sozinho, então não precisa mudar a lógica aqui)
+
+# ... (MANTENHA O RESTO DO CÓDIGO ATÉ O FINAL) ...
 @app.get("/documentos_reprovados")
 async def documentos_reprovados(candidato_id: str = Query(...)):
     config = analyzer.load_config()
@@ -62,11 +74,10 @@ async def processar_documentos(
     form = await request.form()
     candidato_id = form.get("candidato_id")
     
-    print(f"\n[UPLOAD] Recebido upload para candidato ID: {candidato_id}")
-
     if not candidato_id:
         return JSONResponse(status_code=400, content={"erro": "candidato_id é obrigatório."})
 
+    print(f"--> Upload recebido para: {candidato_id}")
     config = analyzer.load_config()
     batch_id = f"{candidato_id}_{uuid.uuid4().hex[:8]}"
     input_folder_base = config["folder_paths"]["input"]
@@ -85,13 +96,10 @@ async def processar_documentos(
     try:
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
-        # Fallback para garantir que o candidato existe no banco local
         cur.execute("SELECT id FROM candidate WHERE id = %s", (candidato_id,))
-        if not cur.fetchone():
-             cur.execute("INSERT INTO candidate (id, name, cpf, step) VALUES (%s, 'Usuario Local', '000', 4)", (candidato_id,))
-        
-        cur.execute("UPDATE candidate SET step = 4 WHERE id = %s", (candidato_id,))
-        conn.commit()
+        if cur.fetchone():
+            cur.execute("UPDATE candidate SET step = 4 WHERE id = %s", (candidato_id,))
+            conn.commit()
         cur.close()
         conn.close()
     except Exception:
@@ -122,28 +130,30 @@ async def get_resultado_lote(batch_id: str = Path(...)):
 
 @app.get("/candidato/{candidato_id}/todos_documentos")
 async def get_todos_documentos_candidato(candidato_id: str):
-    print(f"--> Buscando documentos para candidato: {candidato_id}")
+    print(f"--> Buscando docs para: {candidato_id}")
     config = analyzer.load_config()
     try:
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
         
+        # Busca também o lote_id para construirmos a URL da imagem
         cur.execute("""
             SELECT DISTINCT ON (d.arquivo) 
-                d.id, d.arquivo, d.qualidade, d.categoria, d.dados_extraidos
+                d.id, d.arquivo, d.qualidade, d.categoria, d.dados_extraidos, l.lote_id
             FROM documentos d
+            JOIN lotes l ON d.lote_fk = l.id
             WHERE d.id_candidate = %s
             ORDER BY d.arquivo, d.id DESC
         """, (candidato_id,))
         
         rows = cur.fetchall()
         
-        # FALLBACK: Se não achar nada, pega os últimos 5 (só para garantir que algo aparece no teste)
         if not rows:
-            print("--> [AVISO] Lista vazia para este ID. Buscando últimos 5 documentos globais (DEBUG).")
+            print("--> [AVISO] Lista vazia. Buscando fallback (últimos 5).")
             cur.execute("""
-                SELECT d.id, d.arquivo, d.qualidade, d.categoria, d.dados_extraidos
+                SELECT d.id, d.arquivo, d.qualidade, d.categoria, d.dados_extraidos, l.lote_id
                 FROM documentos d
+                JOIN lotes l ON d.lote_fk = l.id
                 ORDER BY d.id DESC
                 LIMIT 5
             """)
@@ -158,7 +168,8 @@ async def get_todos_documentos_candidato(candidato_id: str):
                 "arquivo": r[1], 
                 "qualidade": r[2], 
                 "categoria": r[3], 
-                "dados_extraidos": r[4]
+                "dados_extraidos": r[4],
+                "lote_id": r[5] # Novo campo necessário para a URL
             } for r in rows
         ]
         return {"documentos": documentos}
@@ -166,52 +177,36 @@ async def get_todos_documentos_candidato(candidato_id: str):
         print(f"[ERRO BUSCA] {e}")
         return JSONResponse(status_code=500, content={"erro": str(e)})
 
-# --- ROTA DE ATUALIZAÇÃO REESCRITA E BLINDADA ---
 @app.patch("/documento/dados")
 async def atualizar_dados_documento(request: Request):
-    print("\n[UPDATE] Recebido pedido de atualização de dados...")
+    data = await request.json()
+    doc_id = data.get("documento_id") 
+    novos_dados = data.get("dados")
+
+    if not doc_id or not novos_dados:
+        return JSONResponse(status_code=400, content={"erro": "ID ou dados faltando."})
+
+    config = analyzer.load_config()
     try:
-        data = await request.json()
-        doc_id = data.get("documento_id") 
-        novos_dados = data.get("dados")
-
-        print(f"[UPDATE] ID do Documento: {doc_id}")
-        print(f"[UPDATE] Novos Dados: {novos_dados}")
-
-        if not doc_id or not novos_dados:
-            print("[UPDATE] ERRO: Dados incompletos.")
-            return JSONResponse(status_code=400, content={"erro": "ID ou dados faltando."})
-
-        config = analyzer.load_config()
         conn = psycopg2.connect(**config["db_credentials"])
         cur = conn.cursor()
         
-        # 1. Converter o dicionário Python para string JSON válida
-        dados_json_str = json.dumps(novos_dados, ensure_ascii=False)
-        
-        # 2. Executar o UPDATE com cast explícito para ::jsonb
         cur.execute("""
             UPDATE documentos
             SET dados_extraidos = %s::jsonb
             WHERE id = %s
-        """, (dados_json_str, doc_id))
+        """, (json.dumps(novos_dados, ensure_ascii=False), doc_id))
         
-        updated_rows = cur.rowcount
-        conn.commit() # IMPORTANTE: Commit da transação
-        
-        print(f"[UPDATE] Linhas afetadas no banco: {updated_rows}")
-        
+        conn.commit()
+        updated = cur.rowcount
         cur.close()
         conn.close()
         
-        if updated_rows == 0:
-             print("[UPDATE] ERRO: Nenhuma linha foi alterada (ID não encontrado?).")
-             return JSONResponse(status_code=404, content={"erro": "Documento não encontrado com esse ID."})
+        if updated == 0:
+             return JSONResponse(status_code=404, content={"erro": "Documento não encontrado."})
 
         return {"status": "sucesso", "mensagem": "Dados atualizados com sucesso"}
-    
     except Exception as e:
-        print(f"[UPDATE] EXCEÇÃO CRÍTICA: {e}")
         return JSONResponse(status_code=500, content={"erro": str(e)})
 
 if __name__ == "__main__":

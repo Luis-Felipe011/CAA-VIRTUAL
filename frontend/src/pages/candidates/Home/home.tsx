@@ -8,7 +8,7 @@ import Chatbot from '../../../components/Chatbot/Chatbot'
 import InfoCandidate from '../../../components/Steps/InfoCandidate/Infocandidate'
 import InfoFamily from '../../../components/Steps/infoFamily/InfoFamily'
 import DocumentProcessor from '../../../components/Steps/DocumentProcessor/DocumentProcessor'
-import EmAnalise from '../../../components/Steps/analise/analise'
+import EmAnalise from '../../../components/Steps/analise/analise' 
 import Resultado from '../../../components/Steps/resultado/resultado'
 
 export function Home() {
@@ -16,8 +16,6 @@ export function Home() {
   const [candidatoId, setCandidatoId] = useState<string | null>(null)
   const [nomeUsuario, setNomeUsuario] = useState('Carregando...')
   const [loading, setLoading] = useState(true)
-  
-  // Estado para o fluxo de documentos
   const [batchId, setBatchId] = useState<string | null>(null)
 
   const handleStepChange = (novoStep: number) => {
@@ -26,7 +24,6 @@ export function Home() {
 
   const autenticarECarregarCandidato = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
-    
     if (!session || !session.user) {
       window.location.href = "/"
       return
@@ -35,26 +32,20 @@ export function Home() {
     const userId = session.user.id;
     setCandidatoId(userId);
 
-    // Busca dados do candidato (tenta ser tolerante a falhas)
     const { data } = await supabase
       .from('candidate')
       .select('nome, step')
       .eq('id', userId)
       .maybeSingle()
     
-    // Lógica restaurada (mais robusta)
     const emailName = session.user.email?.split('@')[0] || 'Usuário';
     
     if (data) {
-      // Se achou o registro, usa o nome (ou o email se o nome estiver vazio)
       setNomeUsuario(data.nome || emailName)
-      
-      // Respeita o step salvo no banco
-      if (typeof data.step === 'number' && data.step > 0) {
+      if (data.step && typeof data.step === 'number' && data.step > 0) {
           setEtapaAtual(data.step)
       }
     } else {
-      // Se não achou registro no banco, usa o email e começa na etapa 1
       setNomeUsuario(emailName)
       setEtapaAtual(1)
     }
@@ -66,9 +57,8 @@ export function Home() {
     autenticarECarregarCandidato()
   }, [autenticarECarregarCandidato])
 
-  // --- HANDLERS DO FLUXO DE DOCUMENTOS ---
   const handleProcessamentoIniciado = (novoBatchId: string) => {
-    console.log("Batch iniciado:", novoBatchId);
+    console.log("Novo Batch iniciado:", novoBatchId);
     setBatchId(novoBatchId); 
     setEtapaAtual(4); // Vai para Análise
   };
@@ -77,6 +67,13 @@ export function Home() {
     console.log("Análise concluída.");
     setEtapaAtual(5); // Vai para Resultado
   };
+
+  // --- NOVA FUNÇÃO: Chamada quando o usuário reenvia um documento ---
+  const handleReenvioIniciado = (novoBatchId: string) => {
+     console.log("Reenvio iniciado. Voltando para análise...", novoBatchId);
+     setBatchId(novoBatchId); // Atualiza com o ID do novo processamento
+     setEtapaAtual(4); // Volta para a tela de loading/polling
+  }
 
   function renderEtapa() {
     if (etapaAtual === 1) {
@@ -101,6 +98,7 @@ export function Home() {
       return <Resultado 
                 candidatoId={candidatoId ?? ''} 
                 batchId={batchId}
+                onReenvio={handleReenvioIniciado} // <--- Passamos a função aqui
              />
     }
   }

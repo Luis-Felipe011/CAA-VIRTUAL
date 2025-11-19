@@ -1,86 +1,216 @@
 .landing {
-    font-family: 'Segoe UI', sans-serif;
+    font-family: 'Poppins', sans-serif;
     min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+    background-color: #0d1a2f; // Fundo da página (Azul Escuro)
+    color: #e0e6f0;
 
     .img-gradient {
         position: absolute;
-        z-index: -2;
+        top: -10%;
+        right: -10%;
+        width: 70%;
+        z-index: 0;
+        opacity: 0.5;
+        pointer-events: none;
     }
 
     &__header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1.5rem 3rem;
-
+        padding: 1.5rem 5%;
+        max-width: 1280px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 10;
+        
+        // Se o "negócio branco" for o header, descomente a linha abaixo:
+        // background-color: white; 
 
         .logo {
-            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            
+            img {
+                height: 45px;
+                // --- CORREÇÃO AQUI ---
+                // Removi o filtro que deixava branco. 
+                // Agora ele usa a cor original da imagem (provavelmente preto/azul).
+                // Se o fundo da página for escuro e o logo for preto, use: filter: invert(1);
+                // Se o logo já tem "NAS VIRTUAL" escrito e sumiu, é porque ele ficou da cor do fundo.
+                
+                // TENTE ESTA CONFIGURAÇÃO PADRÃO (Logo Original):
+                filter: none; 
+                
+                // OU, se o logo for preto e o fundo azul escuro, use isto para ficar branco:
+                // filter: brightness(0) invert(1);
 
-            span {
-                font-style: italic;
-                color: #3a3a3a;
-            }
-
-            strong {
-                color: #4c3cf7;
+                transition: transform 0.3s;
+                &:hover { transform: scale(1.05); }
             }
         }
 
-        .nav {
-            display: flex;
-            gap: 1rem;
-
-
+        .header-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            font-weight: 600;
+            padding: 0.7rem 1.8rem;
+            
+            &:hover {
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
+                border-color: rgba(255, 255, 255, 0.5);
+            }
         }
     }
 
     &__main {
         display: flex;
         align-items: center;
-        padding: 3rem;
-        gap: 2rem;
+        justify-content: space-between;
+        padding: 4rem 5%;
+        min-height: 85vh;
+        max-width: 1280px;
+        margin: 0 auto;
+        gap: 4rem;
+        position: relative;
+        z-index: 1;
 
         .text-block {
-            max-width: 647px;
+            flex: 1;
+            max-width: 600px;
+            animation: slideUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 
             h1 {
-                font-size: 3rem;
-                margin-bottom: 1rem;
-                color: #2c2c2c;
+                font-size: 3.5rem;
+                line-height: 1.2;
+                margin-bottom: 1.5rem;
+                color: #ffffff;
+                font-weight: 800;
+                letter-spacing: -1px;
+                
+                background: linear-gradient(135deg, #ffffff 0%, #a2d2ff 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
             }
 
             p {
-                font-size: 2.1rem;
-                color: #8F9BB0;
-                line-height: 1.6;
-                margin-bottom: 2rem;
+                font-size: 1.15rem;
+                color: #aebed8;
+                line-height: 1.7;
+                margin-bottom: 2.5rem;
+                
+                strong {
+                    color: #5aa1f9;
+                    font-weight: 600;
+                }
             }
 
-            .learn-more {
-                background: #6c63ff;
-                color: white;
-                border: none;
-                padding: 0.8rem 1.5rem;
-                border-radius: 25px;
-                font-weight: bold;
-                font-size: 1rem;
-                cursor: pointer;
-                transition: background 0.3s;
+            .cta-group {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
 
-                &:hover {
-                    background: #554dd1;
+                .main-cta {
+                    background: #5aa1f9;
+                    padding: 1rem 2.5rem;
+                    font-size: 1.1rem;
+                    border-radius: 50px;
+                    box-shadow: 0 10px 20px rgba(89, 161, 249, 0.2);
+                    transition: all 0.3s ease;
+                    color: white;
+
+                    &:hover {
+                        transform: translateY(-3px);
+                        box-shadow: 0 15px 25px rgba(89, 161, 249, 0.3);
+                        background: #3e81e1;
+                    }
+                }
+
+                .sub-text {
+                    font-size: 0.95rem;
+                    color: #aebed8;
+                    margin-left: 10px;
+                    
+                    a {
+                        color: #5aa1f9;
+                        font-weight: 600;
+                        text-decoration: none;
+                        cursor: pointer;
+                        transition: color 0.2s;
+                        
+                        &:hover { 
+                            color: #3e81e1; 
+                            text-decoration: underline;
+                        }
+                    }
                 }
             }
         }
 
         .image-block {
-            img {
-                width: 223%;
-                max-width: 900px;
-                margin-left: 198px;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            animation: fadeIn 1.2s ease-out;
 
+            img {
+                width: 100%;
+                max-width: 650px;
+                height: auto;
+                animation: float 6s ease-in-out infinite;
             }
+        }
+    }
+}
+
+// --- ANIMAÇÕES ---
+
+@keyframes float {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-20px); }
+    100% { transform: translateY(0px); }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+// --- RESPONSIVIDADE ---
+
+@media (max-width: 968px) {
+    .landing__header {
+        padding: 1rem 5%;
+    }
+
+    .landing__main {
+        flex-direction: column;
+        text-align: center;
+        padding-top: 2rem;
+        gap: 3rem;
+
+        .text-block {
+            h1 { font-size: 2.5rem; }
+            p { font-size: 1rem; }
+            
+            .cta-group { 
+                align-items: center; 
+                width: 100%;
+            }
+        }
+
+        .image-block {
+            img { max-width: 80%; }
         }
     }
 }
