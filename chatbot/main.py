@@ -1,18 +1,27 @@
-# pip install python-dotenv langchain langchain-openai langchain-community langchain-chroma chromadb openai pypdf
+import os
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# Bibliotecas do LangChain
 from langchain_chroma.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import uvicorn
-from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv()
+# --- CORREÇÃO CRÍTICA DE CAMINHOS ---
+# Isso garante que o script encontre a pasta 'db' e o '.env' 
+# mesmo se você rodar o comando da pasta raiz.
+DIRETORIO_ATUAL = os.path.dirname(os.path.abspath(__file__))
+CAMINHO_ENV = os.path.join(DIRETORIO_ATUAL, ".env")
+CAMINHO_DB = os.path.join(DIRETORIO_ATUAL, "db")
 
-CAMINHO_DB = "db"
+# Carrega o .env especificando o caminho exato
+load_dotenv(CAMINHO_ENV)
 
+# Configuração do Prompt
 prompt_template = """
 Responda à pergunta do usuário de forma objetiva e direta, usando o mínimo de informação possível, mas suficiente para atender à pergunta:
 {pergunta}
@@ -21,67 +30,57 @@ Considere apenas as informações abaixo:
 {base_conhecimento}
 """
 
-def perguntar():
-    pergunta = input("Escreva sua pergunta: ")
-
-    # carregar o banco de dados
-    funcao_embedding = OpenAIEmbeddings()
-    db = Chroma(persist_directory=CAMINHO_DB, embedding_function=funcao_embedding)
-
-    # comparar a pergunta do usuario (embedding) com o meu banco de dados
-    resultados = db.similarity_search_with_relevance_scores(pergunta, k=4)
-    if len(resultados) == 0 or resultados[0][1] < 0.3:
-        print("Não conseguiu encontrar alguma informação relevante na base")
-        return
-    
-    textos_resultado = []
-    for resultado in resultados:
-        texto = resultado[0].page_content
-        textos_resultado.append(texto)
-    
-    base_conhecimento = "\n\n----\n\n".join(textos_resultado)
-    prompt = ChatPromptTemplate.from_template(prompt_template)
-    prompt = prompt.invoke({"pergunta": pergunta, "base_conhecimento": base_conhecimento})
-    # print(prompt)
-
-    modelo = ChatOpenAI(model="gpt-4o-mini")
-    texto_resposta = modelo.invoke(prompt).content
-    print("Resposta da IA:", texto_resposta)
-
 def responder_chat(mensagem: str) -> str:
-    # Carregar o banco de dados vetorial
-    funcao_embedding = OpenAIEmbeddings()
-    db = Chroma(persist_directory=CAMINHO_DB, embedding_function=funcao_embedding)
+    try:
+        # Verifica se a chave da API foi carregada
+        if not os.getenv("OPENAI_API_KEY"):
+            return "Erro de Configuração: API Key da OpenAI não encontrada no arquivo .env"
 
-    # Buscar os textos mais relevantes
-    resultados = db.similarity_search_with_relevance_scores(mensagem, k=4)
-    if len(resultados) == 0 or resultados[0][1] < 0.3:
-        return "Não consegui encontrar uma resposta relevante na base."
+        # Carregar o banco de dados vetorial usando o caminho absoluto
+        funcao_embedding = OpenAIEmbeddings()
+        
+        if not os.path.exists(CAMINHO_DB):
+             return "Erro: Banco de dados vetorial não encontrado. Execute 'criar_db.py' primeiro."
 
-    textos_resultado = []
-    for resultado in resultados:
-        texto = resultado[0].page_content
-        textos_resultado.append(texto)
+        db = Chroma(persist_directory=CAMINHO_DB, embedding_function=funcao_embedding)
 
-    base_conhecimento = "\n\n----\n\n".join(textos_resultado)
-    prompt = ChatPromptTemplate.from_template(prompt_template)
-    prompt = prompt.invoke({"pergunta": mensagem, "base_conhecimento": base_conhecimento})
+        # Buscar os textos mais relevantes
+        resultados = db.similarity_search_with_relevance_scores(mensagem, k=4)
+        
+        # Se não achar nada relevante ou banco vazio
+        if len(resultados) == 0 or resultados[0][1] < 0.6:
+            return "Desculpe, não encontrei essa informação nos meus documentos oficiais."
 
-    modelo = ChatOpenAI(model="gpt-4o-mini")
-    texto_resposta = modelo.invoke(prompt).content
-    return texto_resposta
+        textos_resultado = []
+        for resultado in resultados:
+            texto = resultado[0].page_content
+            textos_resultado.append(texto)
 
+        base_conhecimento = "\n\n----\n\n".join(textos_resultado)
+        prompt = ChatPromptTemplate.from_template(prompt_template)
+        prompt_formatado = prompt.invoke({"pergunta": mensagem, "base_conhecimento": base_conhecimento})
+
+        modelo = ChatOpenAI(model="gpt-4o-mini")
+        texto_resposta = modelo.invoke(prompt_formatado).content
+        
+        return texto_resposta
+
+    except Exception as e:
+        print(f"Erro interno no chatbot: {e}")
+        return "Desculpe, tive um erro interno ao processar sua pergunta."
+
+# --- CONFIGURAÇÃO DA API ---
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Ou especifique o domínio do seu frontend
+    allow_origins=["*"],  # Permite que o Frontend React acesse
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.post("/chat")
+@app.post("/api/chatbot")  # Rota corrigida
 async def chat_endpoint(request: Request):
     data = await request.json()
     mensagem = data.get("mensagem", "")
